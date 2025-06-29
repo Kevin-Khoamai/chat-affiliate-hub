@@ -103,28 +103,40 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
 
   const loadMessages = async () => {
     try {
-      const { data, error } = await supabase
+      // First get messages
+      const { data: messages, error: messagesError } = await supabase
         .from('messages')
-        .select(`
-          *,
-          profiles:sender_id (
-            name,
-            email
-          )
-        `)
+        .select('*')
         .eq('group_id', activeRoom)
         .order('created_at', { ascending: true })
         .limit(50);
 
-      if (error) throw error;
+      if (messagesError) throw messagesError;
 
-      const decryptedMessages = data?.map(msg => ({
-        ...msg,
-        sender_name: msg.profiles?.name || msg.profiles?.email?.split('@')[0] || 'Unknown',
-        content: msg.encrypted ? decryptMessage(msg.content, user.id) : msg.content
-      })) || [];
+      // Then get profiles for all sender_ids
+      const senderIds = messages?.map(msg => msg.sender_id).filter(Boolean) || [];
+      const uniqueSenderIds = [...new Set(senderIds)];
+      
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, name, email')
+        .in('id', uniqueSenderIds);
 
-      setMessages(decryptedMessages);
+      if (profilesError) throw profilesError;
+
+      // Create a map for easy lookup
+      const profilesMap = new Map(profiles?.map(p => [p.id, p]) || []);
+
+      const messagesWithProfiles = messages?.map(msg => {
+        const profile = profilesMap.get(msg.sender_id);
+        return {
+          ...msg,
+          sender_name: profile?.name || profile?.email?.split('@')[0] || 'Unknown',
+          content: msg.encrypted ? decryptMessage(msg.content, user.id) : msg.content
+        };
+      }) || [];
+
+      setMessages(messagesWithProfiles);
     } catch (error: any) {
       toast({
         title: "Error loading messages",
