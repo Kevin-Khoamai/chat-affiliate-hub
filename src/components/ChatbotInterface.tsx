@@ -5,12 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Bot, Send, BookOpen, TrendingUp } from 'lucide-react';
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
 
 const ChatbotInterface = () => {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [academyContent, setAcademyContent] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   // Sample queries for quick access
   const sampleQueries = [
@@ -20,21 +25,8 @@ const ChatbotInterface = () => {
     "How to optimize conversion rates?"
   ];
 
-  // Mock knowledge base - TODO: Replace with actual RAG implementation
-  const knowledgeBase = {
-    campaigns: [
-      { id: '1', name: 'Summer Fashion Sale', commission: '15%', performance: '+23%', description: 'High-converting fashion campaign targeting summer trends' },
-      { id: '2', name: 'Tech Gadgets Promo', commission: '12%', performance: '+18%', description: 'Electronics and gadgets with excellent conversion rates' },
-      { id: '3', name: 'Home & Garden', commission: '10%', performance: '+8%', description: 'Home improvement and gardening products' }
-    ],
-    academy: [
-      { id: '1', title: 'Affiliate Marketing Basics', content: 'Learn the fundamentals of affiliate marketing', url: '/academy/basics' },
-      { id: '2', title: 'Conversion Optimization', content: 'Advanced techniques to boost your conversion rates', url: '/academy/optimization' },
-      { id: '3', title: 'Traffic Generation', content: 'Proven methods to drive quality traffic to your offers', url: '/academy/traffic' }
-    ]
-  };
-
   useEffect(() => {
+    loadData();
     // Welcome message
     setMessages([
       {
@@ -45,6 +37,30 @@ const ChatbotInterface = () => {
       }
     ]);
   }, []);
+
+  const loadData = async () => {
+    try {
+      // Load campaigns
+      const { data: campaignsData, error: campaignsError } = await supabase
+        .from('campaigns')
+        .select('*')
+        .order('commission_rate', { ascending: false });
+
+      if (campaignsError) throw campaignsError;
+      setCampaigns(campaignsData || []);
+
+      // Load academy content
+      const { data: academyData, error: academyError } = await supabase
+        .from('academy')
+        .select('*')
+        .order('created_at');
+
+      if (academyError) throw academyError;
+      setAcademyContent(academyData || []);
+    } catch (error: any) {
+      console.error('Error loading data:', error);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -57,47 +73,58 @@ const ChatbotInterface = () => {
   const processQuery = async (userQuery: string) => {
     const lowerQuery = userQuery.toLowerCase();
     
-    // Simple keyword matching - TODO: Replace with actual RAG implementation
+    // Campaign queries
     if (lowerQuery.includes('commission') || lowerQuery.includes('campaign')) {
       if (lowerQuery.includes('summer') || lowerQuery.includes('fashion')) {
-        return {
-          type: 'campaign',
-          data: knowledgeBase.campaigns[0],
-          response: `The Summer Fashion Sale campaign offers a **15% commission rate** with a performance increase of **+23%** this month. This high-converting fashion campaign targets summer trends and has been performing excellently.`
-        };
+        const summerCampaign = campaigns.find(c => c.name.toLowerCase().includes('summer') || c.name.toLowerCase().includes('fashion'));
+        if (summerCampaign) {
+          return {
+            type: 'campaign',
+            data: summerCampaign,
+            response: `The **${summerCampaign.name}** campaign offers a **${summerCampaign.commission_rate}%** commission rate. ${summerCampaign.description}\n\nPerformance metrics: ${JSON.stringify(summerCampaign.performance_metrics, null, 2)}`
+          };
+        }
       } else {
         return {
           type: 'campaigns',
-          data: knowledgeBase.campaigns,
-          response: `Here are our current active campaigns:\n\n${knowledgeBase.campaigns.map(c => `**${c.name}**\n- Commission: ${c.commission}\n- Performance: ${c.performance}\n- ${c.description}`).join('\n\n')}`
+          data: campaigns,
+          response: `Here are our current active campaigns:\n\n${campaigns.map(c => `**${c.name}**\n- Commission: ${c.commission_rate}%\n- ${c.description || 'No description available'}`).join('\n\n')}`
         };
       }
     }
     
+    // Academy queries
     if (lowerQuery.includes('academy') || lowerQuery.includes('tutorial') || lowerQuery.includes('learn')) {
       return {
         type: 'academy',
-        data: knowledgeBase.academy,
-        response: `Here are some helpful academy resources:\n\n${knowledgeBase.academy.map(a => `**${a.title}**\n${a.content}\nLearn more: ${a.url}`).join('\n\n')}`
+        data: academyContent,
+        response: `Here are some helpful academy resources:\n\n${academyContent.map(a => `**${a.title}**\n${a.content}\n${a.url ? `Learn more: ${a.url}` : ''}`).join('\n\n')}`
       };
     }
     
+    // Performance queries
     if (lowerQuery.includes('performance') || lowerQuery.includes('top')) {
-      const topCampaign = knowledgeBase.campaigns.reduce((prev, current) => 
-        parseInt(prev.performance.replace('%', '').replace('+', '')) > parseInt(current.performance.replace('%', '').replace('+', '')) ? prev : current
-      );
-      return {
-        type: 'performance',
-        data: topCampaign,
-        response: `The top performing campaign right now is **${topCampaign.name}** with a **${topCampaign.performance}** increase in performance. It offers a **${topCampaign.commission}** commission rate.`
-      };
+      const topCampaign = campaigns.reduce((prev, current) => {
+        const prevPerf = prev.performance_metrics?.conversion_rate || 0;
+        const currentPerf = current.performance_metrics?.conversion_rate || 0;
+        return prevPerf > currentPerf ? prev : current;
+      }, campaigns[0]);
+      
+      if (topCampaign) {
+        return {
+          type: 'performance',
+          data: topCampaign,
+          response: `The top performing campaign right now is **${topCampaign.name}** with a **${topCampaign.performance_metrics?.conversion_rate || 0}%** conversion rate. It offers a **${topCampaign.commission_rate}%** commission rate.`
+        };
+      }
     }
     
+    // Optimization tips
     if (lowerQuery.includes('optimization') || lowerQuery.includes('convert')) {
       return {
         type: 'tips',
         data: null,
-        response: `Here are some conversion optimization tips:\n\n• **Target the right audience** - Use detailed demographics and interests\n• **Test your headlines** - A/B test different approaches\n• **Optimize landing pages** - Ensure fast loading and mobile-friendly design\n• **Use compelling CTAs** - Clear, action-oriented buttons\n• **Build trust** - Include testimonials and reviews\n\nFor more detailed guidance, check out our Conversion Optimization course in the academy!`
+        response: `Here are some conversion optimization tips:\n\n• **Target the right audience** - Use detailed demographics and interests\n• **Test your headlines** - A/B test different approaches\n• **Optimize landing pages** - Ensure fast loading and mobile-friendly design\n• **Use compelling CTAs** - Clear, action-oriented buttons\n• **Build trust** - Include testimonials and reviews\n\nFor more detailed guidance, check out our academy resources!`
       };
     }
     
@@ -124,8 +151,10 @@ const ChatbotInterface = () => {
     setQuery('');
     setLoading(true);
 
-    // Simulate processing time
-    setTimeout(async () => {
+    try {
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       const result = await processQuery(userMessage.content);
       
       const botMessage = {
@@ -138,8 +167,15 @@ const ChatbotInterface = () => {
       };
 
       setMessages(prev => [...prev, botMessage]);
+    } catch (error: any) {
+      toast({
+        title: "Error processing query",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const handleSampleQuery = (sampleQuery: string) => {
@@ -206,7 +242,7 @@ const ChatbotInterface = () => {
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="font-medium">{message.data.name}</h4>
                         <Badge className="bg-green-500/20 text-green-300 border-green-400/30">
-                          {message.data.performance}
+                          {message.data.commission_rate}%
                         </Badge>
                       </div>
                       <p className="text-sm text-white/70">{message.data.description}</p>

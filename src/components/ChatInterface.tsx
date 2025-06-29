@@ -5,58 +5,171 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Send, Users, Lock, Hash } from 'lucide-react';
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
+import { encryptMessage, decryptMessage, generateContentHash } from '@/lib/crypto';
 
 interface ChatInterfaceProps {
   user: any;
 }
 
 const ChatInterface = ({ user }: ChatInterfaceProps) => {
-  const [activeRoom, setActiveRoom] = useState('1');
+  const [activeRoom, setActiveRoom] = useState('');
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
+  const [chatRooms, setChatRooms] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
-  // Mock chat rooms
-  const chatRooms = [
-    { id: '1', name: 'General Discussion', type: 'group', participants: 8 },
-    { id: '2', name: 'High Performers', type: 'group', participants: 5 },
-    { id: '3', name: 'Sarah Wilson', type: 'private', participants: 2 },
-    { id: '4', name: 'Marketing Team', type: 'group', participants: 12 }
-  ];
-
-  // Mock messages - TODO: Replace with Supabase real-time subscription
+  // Load chat rooms and join user to default groups
   useEffect(() => {
-    const mockMessages = [
-      {
-        id: '1',
-        sender_id: '2',
-        sender_name: 'Alice Johnson',
-        content: 'Hey everyone! Just launched a new campaign for summer fashion. Commission rates are looking great!',
-        timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-        group_id: activeRoom === '1' ? '1' : null,
-        recipient_id: activeRoom !== '1' ? user.id : null
-      },
-      {
-        id: '2',
-        sender_id: user.id,
-        sender_name: user.name,
-        content: 'That sounds awesome! What\'s the commission percentage?',
-        timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-        group_id: activeRoom === '1' ? '1' : null,
-        recipient_id: activeRoom !== '1' ? '2' : null
-      },
-      {
-        id: '3',
-        sender_id: '3',
-        sender_name: 'Bob Smith',
-        content: 'I\'ve been seeing great results with the tech gadgets campaign. Performance is up 18% this month!',
-        timestamp: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-        group_id: activeRoom === '1' ? '1' : null,
-        recipient_id: activeRoom !== '1' ? user.id : null
+    loadChatRooms();
+  }, []);
+
+  // Load messages when active room changes
+  useEffect(() => {
+    if (activeRoom) {
+      loadMessages();
+      subscribeToMessages();
+    }
+  }, [activeRoom]);
+
+  const loadChatRooms = async () => {
+    try {
+      // First, get all available groups
+      const { data: groups, error: groupsError } = await supabase
+        .from('chat_groups')
+        .select('*')
+        .order('created_at');
+
+      if (groupsError) throw groupsError;
+
+      // Check which groups the user is a member of
+      const { data: memberships, error: membershipsError } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', user.id);
+
+      if (membershipsError) throw membershipsError;
+
+      const memberGroupIds = memberships?.map(m => m.group_id) || [];
+
+      // If user is not a member of any groups, add them to "General Discussion"
+      if (memberGroupIds.length === 0 && groups && groups.length > 0) {
+        const generalGroup = groups.find(g => g.name === 'General Discussion');
+        if (generalGroup) {
+          await supabase
+            .from('group_members')
+            .insert({ group_id: generalGroup.id, user_id: user.id });
+          memberGroupIds.push(generalGroup.id);
+        }
       }
-    ];
-    setMessages(mockMessages);
-  }, [activeRoom, user.id, user.name]);
+
+      // Filter groups to show only those the user is a member of
+      const userGroups = groups?.filter(g => memberGroupIds.includes(g.id)) || [];
+      
+      // Get member counts for each group
+      const groupsWithCounts = await Promise.all(
+        userGroups.map(async (group) => {
+          const { count } = await supabase
+            .from('group_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('group_id', group.id);
+          
+          return {
+            ...group,
+            participants: count || 0,
+            type: 'group'
+          };
+        })
+      );
+
+      setChatRooms(groupsWithCounts);
+      
+      if (groupsWithCounts.length > 0 && !activeRoom) {
+        setActiveRoom(groupsWithCounts[0].id);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error loading chat rooms",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMessages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          profiles:sender_id (
+            name,
+            email
+          )
+        `)
+        .eq('group_id', activeRoom)
+        .order('created_at', { ascending: true })
+        .limit(50);
+
+      if (error) throw error;
+
+      const decryptedMessages = data?.map(msg => ({
+        ...msg,
+        sender_name: msg.profiles?.name || msg.profiles?.email?.split('@')[0] || 'Unknown',
+        content: msg.encrypted ? decryptMessage(msg.content, user.id) : msg.content
+      })) || [];
+
+      setMessages(decryptedMessages);
+    } catch (error: any) {
+      toast({
+        title: "Error loading messages",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const subscribeToMessages = () => {
+    const channel = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `group_id=eq.${activeRoom}`
+        },
+        async (payload) => {
+          const newMessage = payload.new;
+          
+          // Get sender profile
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('name, email')
+            .eq('id', newMessage.sender_id)
+            .single();
+
+          const messageWithProfile = {
+            ...newMessage,
+            sender_name: profile?.name || profile?.email?.split('@')[0] || 'Unknown',
+            content: newMessage.encrypted ? decryptMessage(newMessage.content, user.id) : newMessage.content
+          };
+
+          setMessages(prev => [...prev, messageWithProfile]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -68,40 +181,44 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!message.trim() || !activeRoom) return;
 
-    // Create new message
-    const newMessage = {
-      id: Date.now().toString(),
-      sender_id: user.id,
-      sender_name: user.name,
-      content: message,
-      timestamp: new Date().toISOString(),
-      group_id: chatRooms.find(r => r.id === activeRoom)?.type === 'group' ? activeRoom : null,
-      recipient_id: chatRooms.find(r => r.id === activeRoom)?.type === 'private' ? '2' : null
-    };
+    try {
+      const shouldEncrypt = true; // You can make this configurable
+      const content = shouldEncrypt ? encryptMessage(message, user.id) : message;
+      const contentHash = generateContentHash(message);
 
-    // TODO: Encrypt message with crypto-js before sending
-    // TODO: Send to Supabase via Edge Function
-    setMessages(prev => [...prev, newMessage]);
-    setMessage('');
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          sender_id: user.id,
+          group_id: activeRoom,
+          content,
+          content_hash: contentHash,
+          encrypted: shouldEncrypt
+        });
 
-    // Simulate real-time response for demo
-    setTimeout(() => {
-      const responseMessage = {
-        id: (Date.now() + 1).toString(),
-        sender_id: '2',
-        sender_name: 'Alice Johnson',
-        content: 'Great question! Let me check the latest rates for you.',
-        timestamp: new Date().toISOString(),
-        group_id: chatRooms.find(r => r.id === activeRoom)?.type === 'group' ? activeRoom : null,
-        recipient_id: chatRooms.find(r => r.id === activeRoom)?.type === 'private' ? user.id : null
-      };
-      setMessages(prev => [...prev, responseMessage]);
-    }, 2000);
+      if (error) throw error;
+      
+      setMessage('');
+    } catch (error: any) {
+      toast({
+        title: "Error sending message",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const activeRoomData = chatRooms.find(room => room.id === activeRoom);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-white">Loading chat rooms...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]">
@@ -124,11 +241,7 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
                 }`}
               >
                 <div className="flex items-center">
-                  {room.type === 'group' ? (
-                    <Hash className="w-4 h-4 mr-2 text-white/70" />
-                  ) : (
-                    <Lock className="w-4 h-4 mr-2 text-white/70" />
-                  )}
+                  <Hash className="w-4 h-4 mr-2 text-white/70" />
                   <span className="font-medium">{room.name}</span>
                 </div>
                 <Badge variant="outline" className="text-xs border-white/30 text-white/70">
@@ -145,11 +258,7 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
         <CardHeader className="border-b border-white/20">
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center">
-              {activeRoomData?.type === 'group' ? (
-                <Hash className="w-5 h-5 mr-2" />
-              ) : (
-                <Lock className="w-5 h-5 mr-2" />
-              )}
+              <Hash className="w-5 h-5 mr-2" />
               {activeRoomData?.name}
             </div>
             <Badge variant="outline" className="border-white/30 text-white/70">
@@ -177,9 +286,14 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
                     <p className="text-xs text-white/70 mb-1">{msg.sender_name}</p>
                   )}
                   <p className="text-sm">{msg.content}</p>
-                  <p className="text-xs text-white/50 mt-1">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-xs text-white/50">
+                      {new Date(msg.created_at).toLocaleTimeString()}
+                    </p>
+                    {msg.encrypted && (
+                      <Lock className="w-3 h-3 text-white/50" />
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

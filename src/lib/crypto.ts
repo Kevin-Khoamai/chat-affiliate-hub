@@ -1,6 +1,5 @@
 
-// Client-side encryption utilities using crypto-js
-// TODO: Install crypto-js package for production use
+import CryptoJS from 'crypto-js';
 
 /**
  * Encrypt message content before sending to backend
@@ -9,12 +8,14 @@
  * @returns Encrypted message string
  */
 export const encryptMessage = (message: string, key: string): string => {
-  // TODO: Implement with crypto-js AES encryption
-  console.log('Encrypting message:', message);
-  
-  // Placeholder implementation - replace with actual crypto-js
-  const mockEncrypted = btoa(message); // Base64 encoding as placeholder
-  return mockEncrypted;
+  try {
+    const encrypted = CryptoJS.AES.encrypt(message, key).toString();
+    console.log('Message encrypted successfully');
+    return encrypted;
+  } catch (error) {
+    console.error('Encryption failed:', error);
+    return message; // Return original message if encryption fails
+  }
 };
 
 /**
@@ -24,16 +25,18 @@ export const encryptMessage = (message: string, key: string): string => {
  * @returns Plain text message
  */
 export const decryptMessage = (encryptedMessage: string, key: string): string => {
-  // TODO: Implement with crypto-js AES decryption
-  console.log('Decrypting message:', encryptedMessage);
-  
-  // Placeholder implementation - replace with actual crypto-js
   try {
-    const mockDecrypted = atob(encryptedMessage); // Base64 decoding as placeholder
-    return mockDecrypted;
+    const bytes = CryptoJS.AES.decrypt(encryptedMessage, key);
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    
+    if (!decrypted) {
+      throw new Error('Failed to decrypt message');
+    }
+    
+    return decrypted;
   } catch (error) {
     console.error('Decryption failed:', error);
-    return 'Decryption failed';
+    return 'Message could not be decrypted';
   }
 };
 
@@ -43,17 +46,14 @@ export const decryptMessage = (encryptedMessage: string, key: string): string =>
  * @returns SHA-256 hash of content
  */
 export const generateContentHash = (content: string): string => {
-  // TODO: Implement with crypto-js SHA256
-  console.log('Generating hash for:', content);
-  
-  // Placeholder implementation - replace with actual crypto-js
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+  try {
+    const hash = CryptoJS.SHA256(content).toString();
+    console.log('Content hash generated successfully');
+    return hash;
+  } catch (error) {
+    console.error('Hash generation failed:', error);
+    return '';
   }
-  return Math.abs(hash).toString(16);
 };
 
 /**
@@ -64,30 +64,46 @@ export const keyManager = {
    * Generate user-specific encryption key
    */
   generateUserKey: (userId: string): string => {
-    // TODO: Implement secure key generation
-    return `user_key_${userId}_${Date.now()}`;
+    const timestamp = Date.now();
+    const randomBytes = CryptoJS.lib.WordArray.random(32);
+    const key = CryptoJS.SHA256(`${userId}_${timestamp}_${randomBytes}`).toString();
+    return key;
   },
   
   /**
    * Get shared group key for group chats
    */
   getGroupKey: (groupId: string): string => {
-    // TODO: Implement group key management
-    return `group_key_${groupId}`;
+    // In a production app, this should be securely shared among group members
+    return CryptoJS.SHA256(`group_${groupId}`).toString();
   },
   
   /**
    * Store key securely in localStorage (temporary solution)
+   * In production, use secure key storage
    */
   storeKey: (keyId: string, key: string): void => {
-    // TODO: Implement secure key storage
-    localStorage.setItem(`chat_key_${keyId}`, key);
+    try {
+      const encryptedKey = CryptoJS.AES.encrypt(key, keyId).toString();
+      localStorage.setItem(`chat_key_${keyId}`, encryptedKey);
+    } catch (error) {
+      console.error('Key storage failed:', error);
+    }
   },
   
   /**
    * Retrieve key from localStorage
    */
   getKey: (keyId: string): string | null => {
-    return localStorage.getItem(`chat_key_${keyId}`);
+    try {
+      const storedKey = localStorage.getItem(`chat_key_${keyId}`);
+      if (!storedKey) return null;
+      
+      const bytes = CryptoJS.AES.decrypt(storedKey, keyId);
+      return bytes.toString(CryptoJS.enc.Utf8);
+    } catch (error) {
+      console.error('Key retrieval failed:', error);
+      return null;
+    }
   }
 };

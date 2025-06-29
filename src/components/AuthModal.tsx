@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MessageCircle, Mail, Lock } from 'lucide-react';
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
 
 interface AuthModalProps {
   onAuthenticated: (user: any) => void;
@@ -15,35 +17,96 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    // TODO: Replace with actual Supabase authentication
-    // For now, simulate authentication
-    setTimeout(() => {
-      const mockUser = {
-        id: '1',
-        email: email,
-        name: email.split('@')[0],
-        created_at: new Date().toISOString()
-      };
-      onAuthenticated(mockUser);
+    try {
+      if (isLogin) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        if (error) throw error;
+        
+        // Fetch user profile
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+        onAuthenticated({
+          id: data.user.id,
+          email: data.user.email,
+          name: profile?.name || data.user.email?.split('@')[0],
+          ...profile
+        });
+      } else {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name: email.split('@')[0]
+            }
+          }
+        });
+        
+        if (error) throw error;
+        
+        if (data.user && !data.session) {
+          toast({
+            title: "Check your email",
+            description: "We've sent you a confirmation link to complete your registration.",
+          });
+        } else if (data.user && data.session) {
+          // Auto-login after signup
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .single();
+
+          onAuthenticated({
+            id: data.user.id,
+            email: data.user.email,
+            name: profile?.name || data.user.email?.split('@')[0],
+            ...profile
+          });
+        }
+      }
+    } catch (error: any) {
+      toast({
+        title: "Authentication Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
-  const handleGoogleAuth = () => {
-    // TODO: Implement Supabase Google OAuth
-    console.log('Google OAuth placeholder - implement with Supabase');
-    const mockUser = {
-      id: '1',
-      email: 'google.user@example.com',
-      name: 'Google User',
-      created_at: new Date().toISOString()
-    };
-    onAuthenticated(mockUser);
+  const handleGoogleAuth = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "OAuth Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
