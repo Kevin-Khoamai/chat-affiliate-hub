@@ -196,8 +196,8 @@ const ChatbotInterface = () => {
         </CardHeader>
 
         {/* Sample Queries */}
-        <div className="p-4 border-b border-white/20">
-          <p className="text-sm text-white/70 mb-2">Try asking:</p>
+        <div className="p-4 border-b border-grey/20 bg-gray-700">
+          <p className="text-sm text-grey/70 mb-2">Try asking:</p>
           <div className="flex flex-wrap gap-2">
             {sampleQueries.map((sample, index) => (
               <Button
@@ -205,7 +205,7 @@ const ChatbotInterface = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => handleSampleQuery(sample)}
-                className="text-xs border-white/30 text-grey /70 bg-gray-700 hover:bg-gray-600"
+                className="text-xs border-grey/30 text-grey /70 bg-gray-700 hover:bg-gray-600"
               >
                 {sample}
               </Button>
