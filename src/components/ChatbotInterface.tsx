@@ -205,7 +205,7 @@ const ChatbotInterface = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => handleSampleQuery(sample)}
-                className="text-xs border-white/30 text-white/70 hover:bg-white/10"
+                className="text-xs border-white/30 text-white/70 bg-gray-700 hover:bg-gray-600"
               >
                 {sample}
               </Button>
