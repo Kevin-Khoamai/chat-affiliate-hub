@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,18 +32,55 @@ const ChatbotInterface = () => {
     "How to track campaign performance metrics?"
   ];
 
+  // Load chat history from localStorage on component mount
   useEffect(() => {
+    loadChatHistory();
     loadData();
-    // Welcome message
-    setMessages([
-      {
+  }, []);
+
+  const loadChatHistory = () => {
+    try {
+      const savedHistory = localStorage.getItem('ai-assistant-chat-history');
+      if (savedHistory) {
+        const parsedHistory = JSON.parse(savedHistory);
+        setMessages(parsedHistory);
+      } else {
+        // Set welcome message only if no history exists
+        const welcomeMessage = {
+          id: '1',
+          type: 'bot',
+          content: 'Hello! I\'m your AI assistant for affiliate marketing. I can help you with campaign information, performance metrics, academy resources, and optimization strategies. What would you like to know?',
+          timestamp: new Date().toISOString()
+        };
+        setMessages([welcomeMessage]);
+        saveChatHistory([welcomeMessage]);
+      }
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      const welcomeMessage = {
         id: '1',
         type: 'bot',
         content: 'Hello! I\'m your AI assistant for affiliate marketing. I can help you with campaign information, performance metrics, academy resources, and optimization strategies. What would you like to know?',
         timestamp: new Date().toISOString()
-      }
-    ]);
-  }, []);
+      };
+      setMessages([welcomeMessage]);
+    }
+  };
+
+  const saveChatHistory = (chatHistory: any[]) => {
+    try {
+      localStorage.setItem('ai-assistant-chat-history', JSON.stringify(chatHistory));
+    } catch (error) {
+      console.error('Error saving chat history:', error);
+    }
+  };
+
+  // Save chat history whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveChatHistory(messages);
+    }
+  }, [messages]);
 
   const loadData = async () => {
     try {
@@ -287,7 +323,8 @@ const ChatbotInterface = () => {
       timestamp: new Date().toISOString()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setQuery('');
     setLoading(true);
 
@@ -306,7 +343,8 @@ const ChatbotInterface = () => {
         timestamp: new Date().toISOString()
       };
 
-      setMessages(prev => [...prev, botMessage]);
+      const updatedMessages = [...newMessages, botMessage];
+      setMessages(updatedMessages);
     } catch (error: any) {
       console.error('Query processing error:', error);
       toast({
@@ -322,7 +360,8 @@ const ChatbotInterface = () => {
         content: `**❌ Error processing your query**\n\nI encountered an error while processing your request. Please try again or rephrase your question.\n\nError details: ${error.message}`,
         timestamp: new Date().toISOString()
       };
-      setMessages(prev => [...prev, errorMessage]);
+      const updatedMessages = [...newMessages, errorMessage];
+      setMessages(updatedMessages);
     } finally {
       setLoading(false);
     }
@@ -332,20 +371,43 @@ const ChatbotInterface = () => {
     setQuery(sampleQuery);
   };
 
+  // Add function to clear chat history
+  const clearChatHistory = () => {
+    const welcomeMessage = {
+      id: '1',
+      type: 'bot',
+      content: 'Hello! I\'m your AI assistant for affiliate marketing. I can help you with campaign information, performance metrics, academy resources, and optimization strategies. What would you like to know?',
+      timestamp: new Date().toISOString()
+    };
+    setMessages([welcomeMessage]);
+    localStorage.removeItem('ai-assistant-chat-history');
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <Card className="bg-white/10 backdrop-blur-sm border-white/20 text-white h-[calc(100vh-200px)] flex flex-col">
         <CardHeader className="border-b border-white/20">
-          <CardTitle className="flex items-center">
-            <Bot className="w-5 h-5 mr-2" />
-            AI Assistant - Campaign & Academy Knowledge
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center">
+              <Bot className="w-5 h-5 mr-2" />
+              AI Assistant - Campaign & Academy Knowledge
+            </CardTitle>
+            <Button
+              onClick={clearChatHistory}
+              variant="outline"
+              size="sm"
+              className="text-xs border-white/30 text-white/70 bg-gray-700/50 hover:bg-gray-600/50"
+            >
+              Clear History
+            </Button>
+          </div>
           <p className="text-sm text-white/70">
             Ask me about campaigns, commissions, performance metrics, academy resources, or optimization strategies
           </p>
           <div className="flex items-center space-x-4 text-xs text-white/60">
             <span>📊 {campaigns.length} campaigns loaded</span>
             <span>📚 {academyContent.length} academy resources</span>
+            <span>💬 {messages.length} messages in history</span>
           </div>
         </CardHeader>
 
