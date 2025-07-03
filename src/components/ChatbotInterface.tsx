@@ -123,7 +123,7 @@ const ChatbotInterface = () => {
         ]);
       } else {
         console.log('Campaigns loaded:', campaignsData);
-        setCampaigns(campaignsData || []);
+      setCampaigns(campaignsData || []);
       }
 
       // Load academy content with proper error handling
@@ -165,7 +165,7 @@ const ChatbotInterface = () => {
         ]);
       } else {
         console.log('Academy content loaded:', academyData);
-        setAcademyContent(academyData || []);
+      setAcademyContent(academyData || []);
       }
     } catch (error: any) {
       console.error('Error loading data:', error);
@@ -291,9 +291,9 @@ const ChatbotInterface = () => {
         return prevPerf > currentPerf ? prev : current;
       }, campaigns[0]);
       
-      return {
-        type: 'performance',
-        data: topCampaign,
+        return {
+          type: 'performance',
+          data: topCampaign,
         response: `**📊 Performance Analytics Dashboard:**\n\n**🏆 Top Performer: ${topCampaign.name}**\n• 🎯 Conversion Rate: ${topCampaign.performance_metrics?.conversion_rate || 0}%\n• 💰 Commission Rate: ${topCampaign.commission_rate}%\n• 📈 Total Clicks: ${topCampaign.performance_metrics?.clicks || 'N/A'}\n• 💼 Total Sales: ${topCampaign.performance_metrics?.sales || 'N/A'}\n• 💵 Estimated Monthly Earnings: $${((topCampaign.performance_metrics?.conversion_rate || 0) * (topCampaign.commission_rate || 0) * 10).toFixed(2)}\n\n**📋 All Campaign Performance:**\n${campaigns.map((c, index) => `${index + 1}. **${c.name}**: ${c.performance_metrics?.conversion_rate || 0}% conversion, ${c.commission_rate}% commission`).join('\n')}\n\n**🎯 Performance Optimization Actions:**\n1. **A/B Test:** Headlines, CTAs, and landing pages\n2. **Traffic Quality:** Focus on high-intent keywords\n3. **Mobile Optimization:** 70% of traffic is mobile\n4. **Speed Optimization:** Every second counts`
       };
     }
@@ -384,14 +384,14 @@ const ChatbotInterface = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-full mx-auto">
       <Card className="bg-white/10 backdrop-blur-sm border-white/20 text-white h-[calc(100vh-200px)] flex flex-col">
         <CardHeader className="border-b border-white/20">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center">
-              <Bot className="w-5 h-5 mr-2" />
-              AI Assistant - Campaign & Academy Knowledge
-            </CardTitle>
+          <CardTitle className="flex items-center">
+            <Bot className="w-5 h-5 mr-2" />
+            AI Assistant - Campaign & Academy Knowledge
+          </CardTitle>
             <Button
               onClick={clearChatHistory}
               variant="outline"
