@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -154,9 +153,12 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
       const messagesWithProfiles = messages?.map(msg => {
         const profile = profilesMap.get(msg.sender_id);
         return {
-          ...msg,
+          id: msg.id,
+          sender_id: msg.sender_id,
           sender_name: profile?.name || profile?.email?.split('@')[0] || 'Unknown',
           content: msg.encrypted ? decryptMessage(msg.content, user.id) : msg.content,
+          created_at: msg.created_at,
+          encrypted: msg.encrypted || false,
           status: 'delivered' as const
         };
       }) || [];
@@ -197,10 +199,13 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
             .eq('id', newMessage.sender_id)
             .single();
 
-          const messageWithProfile = {
-            ...newMessage,
+          const messageWithProfile: Message = {
+            id: newMessage.id,
+            sender_id: newMessage.sender_id,
             sender_name: profile?.name || profile?.email?.split('@')[0] || 'Unknown',
             content: newMessage.encrypted ? decryptMessage(newMessage.content, user.id) : newMessage.content,
+            created_at: newMessage.created_at,
+            encrypted: newMessage.encrypted || false,
             status: 'delivered' as const
           };
 
