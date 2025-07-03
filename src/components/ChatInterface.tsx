@@ -4,22 +4,35 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Send, Users, Lock, Hash } from 'lucide-react';
+import { Send, Users, Lock, Hash, CheckCircle, Clock } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { encryptMessage, decryptMessage, generateContentHash } from '@/lib/crypto';
+import OnlineUsers from './OnlineUsers';
 
 interface ChatInterfaceProps {
   user: any;
 }
 
+interface Message {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  created_at: string;
+  encrypted: boolean;
+  status?: 'sending' | 'sent' | 'delivered';
+}
+
 const ChatInterface = ({ user }: ChatInterfaceProps) => {
   const [activeRoom, setActiveRoom] = useState('');
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [chatRooms, setChatRooms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageChannelRef = useRef<any>(null);
   const { toast } = useToast();
 
   // Load chat rooms and join user to default groups
@@ -33,10 +46,18 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
       loadMessages();
       subscribeToMessages();
     }
+    
+    return () => {
+      if (messageChannelRef.current) {
+        supabase.removeChannel(messageChannelRef.current);
+      }
+    };
   }, [activeRoom]);
 
   const loadChatRooms = async () => {
     try {
+      setConnectionStatus('connecting');
+      
       // First, get all available groups
       const { data: groups, error: groupsError } = await supabase
         .from('chat_groups')
@@ -90,10 +111,13 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
       if (groupsWithCounts.length > 0 && !activeRoom) {
         setActiveRoom(groupsWithCounts[0].id);
       }
+      
+      setConnectionStatus('connected');
     } catch (error: any) {
+      setConnectionStatus('disconnected');
       toast({
-        title: "Error loading chat rooms",
-        description: error.message,
+        title: "Connection Error",
+        description: "Failed to load chat rooms. Please refresh the page.",
         variant: "destructive",
       });
     } finally {
@@ -132,7 +156,8 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
         return {
           ...msg,
           sender_name: profile?.name || profile?.email?.split('@')[0] || 'Unknown',
-          content: msg.encrypted ? decryptMessage(msg.content, user.id) : msg.content
+          content: msg.encrypted ? decryptMessage(msg.content, user.id) : msg.content,
+          status: 'delivered' as const
         };
       }) || [];
 
@@ -147,8 +172,13 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
   };
 
   const subscribeToMessages = () => {
+    // Clean up existing subscription
+    if (messageChannelRef.current) {
+      supabase.removeChannel(messageChannelRef.current);
+    }
+
     const channel = supabase
-      .channel('messages')
+      .channel(`messages:${activeRoom}`)
       .on(
         'postgres_changes',
         {
@@ -170,17 +200,34 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
           const messageWithProfile = {
             ...newMessage,
             sender_name: profile?.name || profile?.email?.split('@')[0] || 'Unknown',
-            content: newMessage.encrypted ? decryptMessage(newMessage.content, user.id) : newMessage.content
+            content: newMessage.encrypted ? decryptMessage(newMessage.content, user.id) : newMessage.content,
+            status: 'delivered' as const
           };
 
-          setMessages(prev => [...prev, messageWithProfile]);
+          setMessages(prev => {
+            // Update the temporary message if it exists, otherwise add new message
+            const tempIndex = prev.findIndex(msg => 
+              msg.sender_id === newMessage.sender_id && 
+              msg.status === 'sending' &&
+              msg.content === messageWithProfile.content
+            );
+            
+            if (tempIndex !== -1) {
+              const updated = [...prev];
+              updated[tempIndex] = messageWithProfile;
+              return updated;
+            }
+            
+            return [...prev, messageWithProfile];
+          });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Message subscription status:', status);
+        setConnectionStatus(status === 'SUBSCRIBED' ? 'connected' : 'connecting');
+      });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    messageChannelRef.current = channel;
   };
 
   const scrollToBottom = () => {
@@ -195,10 +242,26 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
     e.preventDefault();
     if (!message.trim() || !activeRoom) return;
 
+    const messageContent = message.trim();
+    setMessage(''); // Clear input immediately for better UX
+
+    // Add temporary message for immediate feedback
+    const tempMessage: Message = {
+      id: `temp-${Date.now()}`,
+      sender_id: user.id,
+      sender_name: user.name,
+      content: messageContent,
+      created_at: new Date().toISOString(),
+      encrypted: false,
+      status: 'sending'
+    };
+
+    setMessages(prev => [...prev, tempMessage]);
+
     try {
       const shouldEncrypt = true; // You can make this configurable
-      const content = shouldEncrypt ? encryptMessage(message, user.id) : message;
-      const contentHash = generateContentHash(message);
+      const content = shouldEncrypt ? encryptMessage(messageContent, user.id) : messageContent;
+      const contentHash = generateContentHash(messageContent);
 
       const { error } = await supabase
         .from('messages')
@@ -212,8 +275,17 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
 
       if (error) throw error;
       
-      setMessage('');
+      // Update temporary message status
+      setMessages(prev => prev.map(msg => 
+        msg.id === tempMessage.id 
+          ? { ...msg, status: 'sent' as const }
+          : msg
+      ));
+      
     } catch (error: any) {
+      // Remove failed message
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+      
       toast({
         title: "Error sending message",
         description: error.message,
@@ -232,14 +304,33 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
     );
   }
 
+  const getMessageStatusIcon = (status?: string) => {
+    switch (status) {
+      case 'sending':
+        return <Clock className="w-3 h-3 text-white/30" />;
+      case 'sent':
+        return <CheckCircle className="w-3 h-3 text-white/50" />;
+      case 'delivered':
+        return <CheckCircle className="w-3 h-3 text-blue-400" />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]">
       {/* Chat Rooms Sidebar */}
       <Card className="bg-white/10 backdrop-blur-sm border-white/20 text-white lg:col-span-1">
         <CardHeader>
-          <CardTitle className="flex items-center">
-            <Users className="w-5 h-5 mr-2" />
-            Chat Rooms
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center">
+              <Users className="w-5 h-5 mr-2" />
+              Chat Rooms
+            </div>
+            <div className={`w-2 h-2 rounded-full ${
+              connectionStatus === 'connected' ? 'bg-green-400' : 
+              connectionStatus === 'connecting' ? 'bg-yellow-400' : 'bg-red-400'
+            }`} />
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -273,9 +364,12 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
               <Hash className="w-5 h-5 mr-2" />
               {activeRoomData?.name}
             </div>
-            <Badge variant="outline" className="border-white/30 text-white/70">
-              {activeRoomData?.participants} participants
-            </Badge>
+            <div className="flex items-center space-x-4">
+              <OnlineUsers roomId={activeRoom} currentUserId={user.id} />
+              <Badge variant="outline" className="border-white/30 text-white/70">
+                {activeRoomData?.participants} members
+              </Badge>
+            </div>
           </CardTitle>
         </CardHeader>
         
@@ -302,9 +396,10 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
                     <p className="text-xs text-white/50">
                       {new Date(msg.created_at).toLocaleTimeString()}
                     </p>
-                    {msg.encrypted && (
-                      <Lock className="w-3 h-3 text-white/50" />
-                    )}
+                    <div className="flex items-center space-x-1">
+                      {msg.encrypted && <Lock className="w-3 h-3 text-white/50" />}
+                      {msg.sender_id === user.id && getMessageStatusIcon(msg.status)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -319,10 +414,15 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
             <Input
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your message..."
+              placeholder={connectionStatus === 'connected' ? "Type your message..." : "Connecting..."}
               className="flex-1 bg-white/10 border-white/20 text-white placeholder:text-white/50"
+              disabled={connectionStatus !== 'connected'}
             />
-            <Button type="submit" className="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600">
+            <Button 
+              type="submit" 
+              className="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600"
+              disabled={connectionStatus !== 'connected' || !message.trim()}
+            >
               <Send className="w-4 h-4" />
             </Button>
           </form>

@@ -5,6 +5,7 @@ import { MessageCircle, Bot, Users, BookOpen } from "lucide-react";
 import AuthModal from "@/components/AuthModal";
 import ChatInterface from "@/components/ChatInterface";
 import ChatbotInterface from "@/components/ChatbotInterface";
+import UserProfile from "@/components/UserProfile";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -18,10 +19,45 @@ const Index = () => {
 
   const checkAuthState = async () => {
     try {
+      // Set up auth state listener FIRST
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.id);
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Defer profile fetch to avoid auth callback deadlock
+          setTimeout(async () => {
+            try {
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+
+              setUser({
+                id: session.user.id,
+                email: session.user.email,
+                name: profile?.name || session.user.email?.split('@')[0],
+                ...profile
+              });
+            } catch (error) {
+              console.error('Error fetching profile:', error);
+              // Still set user even if profile fetch fails
+              setUser({
+                id: session.user.id,
+                email: session.user.email,
+                name: session.user.email?.split('@')[0]
+              });
+            }
+          }, 0);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+        }
+      });
+
+      // THEN check for existing session
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        // Fetch user profile
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
@@ -35,35 +71,22 @@ const Index = () => {
           ...profile
         });
       }
+
+      // Clean up subscription
+      return () => subscription.unsubscribe();
     } catch (error) {
       console.error('Auth check error:', error);
     } finally {
       setLoading(false);
     }
-
-    // Listen for auth changes
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-
-        setUser({
-          id: session.user.id,
-          email: session.user.email,
-          name: profile?.name || session.user.email?.split('@')[0],
-          ...profile
-        });
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-      }
-    });
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleUserUpdate = (updatedUser: any) => {
+    setUser(updatedUser);
   };
 
   if (loading) {
@@ -94,6 +117,7 @@ const Index = () => {
           </div>
           <div className="flex items-center space-x-4">
             <span className="text-white/70">Welcome, {user.name}!</span>
+            <UserProfile user={user} onUserUpdate={handleUserUpdate} />
             <button
               onClick={handleSignOut}
               className="text-white/70 hover:text-white transition-colors"

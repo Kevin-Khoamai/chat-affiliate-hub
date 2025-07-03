@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MessageCircle, Mail, Lock } from 'lucide-react';
+import { MessageCircle, Mail, Lock, User } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -16,6 +16,7 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
@@ -30,7 +31,12 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
           password,
         });
         
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) {
+            throw new Error('Invalid email or password. Please check your credentials and try again.');
+          }
+          throw error;
+        }
         
         // Fetch user profile
         const { data: profile } = await supabase
@@ -46,17 +52,24 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
           ...profile
         });
       } else {
+        // Sign up with name
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              name: email.split('@')[0]
-            }
+              name: name || email.split('@')[0]
+            },
+            emailRedirectTo: `${window.location.origin}/`
           }
         });
         
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('User already registered')) {
+            throw new Error('An account with this email already exists. Please sign in instead.');
+          }
+          throw error;
+        }
         
         if (data.user && !data.session) {
           toast({
@@ -74,7 +87,7 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
           onAuthenticated({
             id: data.user.id,
             email: data.user.email,
-            name: profile?.name || data.user.email?.split('@')[0],
+            name: profile?.name || name || data.user.email?.split('@')[0],
             ...profile
           });
         }
@@ -95,7 +108,7 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin
+          redirectTo: `${window.location.origin}/`
         }
       });
       
@@ -127,6 +140,22 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
         </CardHeader>
         <CardContent className="space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-white">Full Name</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 w-4 h-4 text-white/50" />
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/50 pl-10"
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email" className="text-white">Email</Label>
               <div className="relative">
@@ -154,6 +183,7 @@ const AuthModal = ({ onAuthenticated }: AuthModalProps) => {
                   onChange={(e) => setPassword(e.target.value)}
                   className="bg-white/10 border-white/20 text-white placeholder:text-white/50 pl-10"
                   required
+                  minLength={6}
                 />
               </div>
             </div>
