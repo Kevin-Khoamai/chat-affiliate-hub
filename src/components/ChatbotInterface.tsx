@@ -381,7 +381,7 @@ const ChatbotInterface = () => {
 
   return (
     <div className="max-w-full mx-auto">
-      <Card className="bg-white/10 backdrop-blur-sm border-white/20 text-white h-[calc(100vh-100px)] flex flex-col">
+      <Card className="bg-white/10 backdrop-blur-sm border-white/20 text-white h-[calc(100vh-50px)] flex flex-col">
         <CardHeader className="border-b border-white/20">
           <div className="flex items-center justify-between">
           <CardTitle className="flex items-center">
