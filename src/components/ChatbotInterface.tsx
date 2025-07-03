@@ -443,9 +443,9 @@ const ChatbotInterface = () => {
                   }`}
                 >
                   {message.type === 'bot' && (
-                    <div className="flex items-center mb-2">
+                    <div className="flex items-center mb-1">
                       <Bot className="w-4 h-4 mr-2" />
-                      <span className="text-xs text-white/70">AI Assistant</span>
+                      <span className="text-xs text-white/50">AI Assistant</span>
                     </div>
                   )}
                   <div className="text-sm whitespace-pre-line">{message.content}</div>
