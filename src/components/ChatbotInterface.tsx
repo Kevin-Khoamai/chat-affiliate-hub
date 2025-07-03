@@ -408,17 +408,17 @@ const ChatbotInterface = () => {
         </CardHeader>
 
         {/* Enhanced Sample Queries with Animation */}
-        <div className="p-4 border-b border-white/20 bg-gray-800/50 overflow-hidden">
-          <p className="text-sm text-white/70 mb-3">💡 Try asking:</p>
+        <div className="p-2 border-b border-white/20 bg-gray-800/50 overflow-hidden">
+          <p className="text-sm text-white/70 mb-1/none">💡 Try asking:</p>
           <div className="relative">
-            <div className="flex animate-[slide_20s_linear_infinite] gap-4">
+            <div className="flex animate-[slide_20s_linear_infinite] gap-2">
               {[...sampleQueries, ...sampleQueries].map((sample, index) => (
                 <Button
                   key={index}
                   variant="outline"
                   size="sm"
                   onClick={() => handleSampleQuery(sample)}
-                  className="text-xs border-white/30 text-white/70 bg-gray-700/50 hover:bg-gray-600/50 whitespace-nowrap px-4 py-2 flex-shrink-0 min-w-fit justify-center"
+                  className="text-xs border-white/30 text-white/70 bg-gray-700/50 hover:bg-gray-600/50 whitespace-nowrap px-2 py-1 flex-shrink-0 min-w-fit justify-center"
                 >
                   {sample}
                 </Button>
