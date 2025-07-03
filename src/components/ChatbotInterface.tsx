@@ -16,16 +16,16 @@ const ChatbotInterface = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Optimized sample queries with consistent length (25-30 characters)
+  // Enhanced sample queries with descriptive text for better AI matching
   const sampleQueries = [
-    "Show top commission campaigns",
-    "Academy tutorials for beginners",
-    "Best email marketing tips",
-    "Social media promotion guide",
-    "How to optimize conversions?",
-    "Latest campaign performance",
-    "SEO strategies for affiliates",
-    "Commission payment schedules"
+    "What campaigns have the highest commission rates?",
+    "Show me Summer Fashion Sale campaign details", 
+    "Academy tutorials for affiliate marketing beginners",
+    "How to optimize my conversion rates?",
+    "Best practices for email marketing campaigns",
+    "Social media promotion strategies and tips",
+    "What are the latest campaign performance metrics?",
+    "Commission structures and payment schedules"
   ];
 
   // Load chat history from localStorage on component mount
@@ -418,7 +418,7 @@ const ChatbotInterface = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => handleSampleQuery(sample)}
-                  className="text-xs border-white/30 text-white/70 bg-gray-700/50 hover:bg-gray-600/50 whitespace-nowrap px-4 py-2 flex-shrink-0 min-w-[200px] justify-center"
+                  className="text-xs border-white/30 text-white/70 bg-gray-700/50 hover:bg-gray-600/50 whitespace-nowrap px-4 py-2 flex-shrink-0 min-w-fit justify-center"
                 >
                   {sample}
                 </Button>
