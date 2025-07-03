@@ -16,20 +16,16 @@ const ChatbotInterface = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Enhanced sample queries for quick access
+  // Optimized sample queries with consistent length (25-30 characters)
   const sampleQueries = [
-    "What campaigns have the highest commission rates?",
-    "Show me Summer Fashion Sale campaign details",
-    "Top performing campaigns this month",
-    "Academy tutorials for affiliate marketing beginners",
-    "How to optimize my conversion rates?",
-    "Best practices for email marketing campaigns",
-    "Social media promotion strategies",
-    "What are the latest campaign trends?",
-    "Commission structures and payment schedules",
-    "Content creation tips for affiliates",
-    "SEO optimization for affiliate websites",
-    "How to track campaign performance metrics?"
+    "Show top commission campaigns",
+    "Academy tutorials for beginners",
+    "Best email marketing tips",
+    "Social media promotion guide",
+    "How to optimize conversions?",
+    "Latest campaign performance",
+    "SEO strategies for affiliates",
+    "Commission payment schedules"
   ];
 
   // Load chat history from localStorage on component mount
@@ -411,21 +407,23 @@ const ChatbotInterface = () => {
           </div>
         </CardHeader>
 
-        {/* Enhanced Sample Queries */}
-        <div className="p-4 border-b border-white/20 bg-gray-800/50">
+        {/* Enhanced Sample Queries with Animation */}
+        <div className="p-4 border-b border-white/20 bg-gray-800/50 overflow-hidden">
           <p className="text-sm text-white/70 mb-3">💡 Try asking:</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-            {sampleQueries.map((sample, index) => (
-              <Button
-                key={index}
-                variant="outline"
-                size="sm"
-                onClick={() => handleSampleQuery(sample)}
-                className="text-xs border-white/30 text-white/70 bg-gray-700/50 hover:bg-gray-600/50 justify-start text-left h-auto py-2 px-3"
-              >
-                {sample}
-              </Button>
-            ))}
+          <div className="relative">
+            <div className="flex animate-[slide_20s_linear_infinite] gap-4">
+              {[...sampleQueries, ...sampleQueries].map((sample, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSampleQuery(sample)}
+                  className="text-xs border-white/30 text-white/70 bg-gray-700/50 hover:bg-gray-600/50 whitespace-nowrap px-4 py-2 flex-shrink-0 min-w-[200px] justify-center"
+                >
+                  {sample}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
 
