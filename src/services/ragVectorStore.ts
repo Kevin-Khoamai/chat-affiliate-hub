@@ -24,7 +24,7 @@ export interface SimilaritySearchResult {
 }
 
 export class RAGVectorStore {
-  private tableName = 'rag_embeddings';
+  // For now, we'll use existing tables until we create the proper RAG embeddings table
   private initialized = false;
 
   async initialize(): Promise<void> {
@@ -32,8 +32,8 @@ export class RAGVectorStore {
 
     console.log('Initializing RAG Vector Store...');
     
-    // TODO: Ensure vector storage table exists
-    // This will be created via SQL migration
+    // TODO: Create vector storage table via SQL migration
+    // For now, we'll work with mock data until the proper table is created
     
     this.initialized = true;
   }
@@ -41,22 +41,11 @@ export class RAGVectorStore {
   // Store a single document with its embedding
   async storeDocument(document: VectorDocument): Promise<void> {
     try {
-      const { error } = await supabase
-        .from(this.tableName)
-        .upsert({
-          id: document.id,
-          content: document.content,
-          embedding: JSON.stringify(document.embedding),
-          metadata: document.metadata,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) {
-        throw new Error(`Failed to store document: ${error.message}`);
-      }
-
-      console.log('Document stored successfully:', document.id);
+      console.log('Document would be stored:', document.id);
+      // TODO: Implement actual storage once rag_embeddings table is created
+      
+      // For now, we'll just log the operation
+      console.log('Mock storage - Document stored successfully:', document.id);
     } catch (error) {
       console.error('Error storing document:', error);
       throw error;
@@ -67,34 +56,18 @@ export class RAGVectorStore {
   async storeBatch(documents: VectorDocument[]): Promise<void> {
     console.log(`Storing batch of ${documents.length} documents`);
 
-    const batchSize = 50; // Process in smaller batches for reliability
-    
-    for (let i = 0; i < documents.length; i += batchSize) {
-      const batch = documents.slice(i, i + batchSize);
+    try {
+      // TODO: Implement actual batch storage once rag_embeddings table is created
       
-      try {
-        const { error } = await supabase
-          .from(this.tableName)
-          .upsert(
-            batch.map(doc => ({
-              id: doc.id,
-              content: doc.content,
-              embedding: JSON.stringify(doc.embedding),
-              metadata: doc.metadata,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }))
-          );
-
-        if (error) {
-          throw new Error(`Batch insert failed: ${error.message}`);
-        }
-
-        console.log(`Batch ${Math.floor(i / batchSize) + 1} stored successfully`);
-      } catch (error) {
-        console.error(`Error storing batch starting at ${i}:`, error);
-        throw error;
+      // For now, process each document individually as mock operations
+      for (const doc of documents) {
+        await this.storeDocument(doc);
       }
+      
+      console.log('Mock batch storage completed successfully');
+    } catch (error) {
+      console.error('Error storing batch:', error);
+      throw error;
     }
   }
 
@@ -120,8 +93,7 @@ export class RAGVectorStore {
     try {
       console.log('Performing similarity search with options:', options);
 
-      // TODO: Implement actual vector similarity search
-      // For now, return mock results based on current data
+      // TODO: Implement actual vector similarity search once pgvector is set up
       const mockResults = await this.getMockSimilarityResults(queryEmbedding, options);
       
       return mockResults
@@ -199,9 +171,92 @@ export class RAGVectorStore {
       };
     } = {}
   ): Promise<SimilaritySearchResult[]> {
-    // TODO: Implement full-text search
+    // For now, search existing campaign and academy data
     console.log('Performing keyword search for:', queryText);
-    return []; // Placeholder
+    
+    try {
+      const campaignResults = await this.searchCampaigns(queryText, options);
+      const academyResults = await this.searchAcademy(queryText, options);
+      
+      return [...campaignResults, ...academyResults];
+    } catch (error) {
+      console.error('Keyword search failed:', error);
+      return [];
+    }
+  }
+
+  private async searchCampaigns(
+    queryText: string,
+    options: any
+  ): Promise<SimilaritySearchResult[]> {
+    try {
+      const { data: campaigns, error } = await supabase
+        .from('campaigns')
+        .select('*')
+        .or(`name.ilike.%${queryText}%,description.ilike.%${queryText}%`)
+        .limit(options.limit || 5);
+
+      if (error) throw error;
+
+      return (campaigns || []).map((campaign, index) => ({
+        document: {
+          id: campaign.id,
+          content: `${campaign.name}\n${campaign.description || ''}`,
+          embedding: [], // Mock embedding
+          metadata: {
+            type: 'campaign' as const,
+            title: campaign.name,
+            source_id: campaign.id,
+            created_at: campaign.created_at || new Date().toISOString(),
+            updated_at: campaign.updated_at || new Date().toISOString(),
+            commission_rate: campaign.commission_rate,
+            performance_metrics: campaign.performance_metrics
+          }
+        },
+        similarity: 0.8, // Mock similarity score
+        rank: index + 1
+      }));
+    } catch (error) {
+      console.error('Campaign search failed:', error);
+      return [];
+    }
+  }
+
+  private async searchAcademy(
+    queryText: string,
+    options: any
+  ): Promise<SimilaritySearchResult[]> {
+    try {
+      const { data: academyItems, error } = await supabase
+        .from('academy')
+        .select('*')
+        .or(`title.ilike.%${queryText}%,content.ilike.%${queryText}%`)
+        .limit(options.limit || 5);
+
+      if (error) throw error;
+
+      return (academyItems || []).map((item, index) => ({
+        document: {
+          id: item.id,
+          content: `${item.title}\n${item.content || ''}`,
+          embedding: [], // Mock embedding
+          metadata: {
+            type: 'academy' as const,
+            title: item.title,
+            source_id: item.id,
+            category: item.category,
+            created_at: item.created_at || new Date().toISOString(),
+            updated_at: item.updated_at || new Date().toISOString(),
+            url: item.url
+          }
+        },
+        similarity: 0.75, // Mock similarity score
+        rank: index + 1
+      }));
+    } catch (error) {
+      console.error('Academy search failed:', error);
+      return [];
+    }
   }
 
   // Combine vector and keyword search results
@@ -248,18 +303,18 @@ export class RAGVectorStore {
     queryEmbedding: number[],
     options: any
   ): Promise<SimilaritySearchResult[]> {
-    // TODO: Replace with actual vector search once pgvector is set up
     console.log('Using mock similarity search');
     
+    // Return a mix of campaign and academy mock results
     return [
       {
         document: {
-          id: 'mock-1',
-          content: 'Mock relevant content for testing',
+          id: 'mock-campaign-1',
+          content: 'Summer Fashion Sale - Great deals on summer clothing with high conversion rates',
           embedding: queryEmbedding,
           metadata: {
             type: 'campaign' as const,
-            title: 'Mock Campaign',
+            title: 'Summer Fashion Sale',
             source_id: '1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -267,38 +322,35 @@ export class RAGVectorStore {
         },
         similarity: 0.95,
         rank: 1
+      },
+      {
+        document: {
+          id: 'mock-academy-1',
+          content: 'Affiliate Marketing Basics - Learn the fundamentals of affiliate marketing',
+          embedding: queryEmbedding,
+          metadata: {
+            type: 'academy' as const,
+            title: 'Affiliate Marketing Basics',
+            source_id: '1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+        },
+        similarity: 0.85,
+        rank: 2
       }
     ];
   }
 
-  // Delete documents by filter
+  // Delete documents by filter (mock implementation)
   async deleteDocuments(filter: {
     type?: string;
     source_id?: string;
     [key: string]: any;
   }): Promise<number> {
-    try {
-      let query = supabase.from(this.tableName).delete();
-
-      // Apply filters
-      Object.entries(filter).forEach(([key, value]) => {
-        if (key === 'type' || key === 'source_id') {
-          query = query.eq(`metadata->>${key}`, value);
-        }
-      });
-
-      const { error, count } = await query;
-
-      if (error) {
-        throw new Error(`Failed to delete documents: ${error.message}`);
-      }
-
-      console.log(`Deleted ${count || 0} documents`);
-      return count || 0;
-    } catch (error) {
-      console.error('Error deleting documents:', error);
-      throw error;
-    }
+    console.log('Mock delete operation for filter:', filter);
+    // TODO: Implement actual deletion once rag_embeddings table is created
+    return 0;
   }
 
   // Get vector store statistics
@@ -308,17 +360,21 @@ export class RAGVectorStore {
     lastUpdated: string;
   }> {
     try {
-      const { count, error } = await supabase
-        .from(this.tableName)
+      // Get stats from existing tables for now
+      const { count: campaignCount } = await supabase
+        .from('campaigns')
         .select('*', { count: 'exact', head: true });
 
-      if (error) {
-        throw new Error(`Failed to get stats: ${error.message}`);
-      }
+      const { count: academyCount } = await supabase
+        .from('academy')
+        .select('*', { count: 'exact', head: true });
 
       return {
-        totalDocuments: count || 0,
-        documentsByType: {}, // TODO: Implement type breakdown
+        totalDocuments: (campaignCount || 0) + (academyCount || 0),
+        documentsByType: {
+          campaign: campaignCount || 0,
+          academy: academyCount || 0
+        },
         lastUpdated: new Date().toISOString()
       };
     } catch (error) {
