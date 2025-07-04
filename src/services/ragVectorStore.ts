@@ -210,7 +210,7 @@ export class RAGVectorStore {
       // Filter campaigns based on query text
       const filteredCampaigns = campaigns.filter(campaign => {
         const searchText = queryText.toLowerCase();
-        const nameMatch = campaign.name.toLowerCase().includes(searchText);
+        const nameMatch = campaign.name?.toLowerCase().includes(searchText);
         const descMatch = campaign.description?.toLowerCase().includes(searchText);
         
         return nameMatch || descMatch;
@@ -221,7 +221,16 @@ export class RAGVectorStore {
       return filteredCampaigns.map((campaign, index) => ({
         document: {
           id: campaign.id,
-          content: `${campaign.name}\n${campaign.description || ''}`,
+          content: `**Campaign: ${campaign.name}**
+
+**Description:** ${campaign.description || 'No description available'}
+
+**Commission Rate:** ${campaign.commission_rate}%
+
+**Performance Metrics:** ${campaign.performance_metrics ? JSON.stringify(campaign.performance_metrics, null, 2) : 'No metrics available'}
+
+**Status:** Active
+**Category:** ${this.getCampaignCategory(campaign.name)}`,
           embedding: [], // Mock embedding
           metadata: {
             type: 'campaign' as const,
@@ -230,16 +239,27 @@ export class RAGVectorStore {
             created_at: campaign.created_at || new Date().toISOString(),
             updated_at: campaign.updated_at || new Date().toISOString(),
             commission_rate: campaign.commission_rate,
-            performance_metrics: campaign.performance_metrics
+            performance_metrics: campaign.performance_metrics,
+            category: this.getCampaignCategory(campaign.name)
           }
         },
-        similarity: 0.8 - (index * 0.1), // Mock similarity score with decreasing relevance
+        similarity: 0.8 - (index * 0.05), // Mock similarity score with decreasing relevance
         rank: index + 1
       }));
     } catch (error) {
       console.error('Campaign search failed:', error);
       return [];
     }
+  }
+
+  private getCampaignCategory(campaignName: string): string {
+    const name = campaignName.toLowerCase();
+    if (name.includes('fashion') || name.includes('clothing')) return 'Fashion';
+    if (name.includes('tech') || name.includes('gadget')) return 'Technology';
+    if (name.includes('home') || name.includes('garden')) return 'Home & Garden';
+    if (name.includes('beauty') || name.includes('cosmetic')) return 'Beauty';
+    if (name.includes('fitness') || name.includes('health')) return 'Health & Fitness';
+    return 'General';
   }
 
   private async searchAcademy(
@@ -268,7 +288,7 @@ export class RAGVectorStore {
       // Filter academy items based on query text
       const filteredAcademy = academyItems.filter(item => {
         const searchText = queryText.toLowerCase();
-        const titleMatch = item.title.toLowerCase().includes(searchText);
+        const titleMatch = item.title?.toLowerCase().includes(searchText);
         const contentMatch = item.content?.toLowerCase().includes(searchText);
         
         return titleMatch || contentMatch;
@@ -279,7 +299,13 @@ export class RAGVectorStore {
       return filteredAcademy.map((item, index) => ({
         document: {
           id: item.id,
-          content: `${item.title}\n${item.content || ''}`,
+          content: `**Academy: ${item.title}**
+
+**Content:** ${item.content || 'No content available'}
+
+**Category:** ${item.category || 'General'}
+
+**URL:** ${item.url || 'No URL available'}`,
           embedding: [], // Mock embedding
           metadata: {
             type: 'academy' as const,
@@ -291,7 +317,7 @@ export class RAGVectorStore {
             url: item.url
           }
         },
-        similarity: 0.75 - (index * 0.1), // Mock similarity score with decreasing relevance
+        similarity: 0.75 - (index * 0.05), // Mock similarity score with decreasing relevance
         rank: index + 1
       }));
     } catch (error) {
@@ -348,18 +374,27 @@ export class RAGVectorStore {
     
     // Get real data for mock results
     try {
-      const { data: campaigns } = await supabase.from('campaigns').select('*').limit(2);
-      const { data: academy } = await supabase.from('academy').select('*').limit(2);
+      const { data: campaigns } = await supabase.from('campaigns').select('*').limit(5);
+      const { data: academy } = await supabase.from('academy').select('*').limit(3);
       
       const mockResults: SimilaritySearchResult[] = [];
       
-      // Add campaign results
+      // Add campaign results with consistent formatting
       if (campaigns && campaigns.length > 0) {
         campaigns.forEach((campaign, index) => {
           mockResults.push({
             document: {
               id: campaign.id,
-              content: `${campaign.name} - ${campaign.description || ''}`,
+              content: `**Campaign: ${campaign.name}**
+
+**Description:** ${campaign.description || 'No description available'}
+
+**Commission Rate:** ${campaign.commission_rate}%
+
+**Performance Metrics:** ${campaign.performance_metrics ? JSON.stringify(campaign.performance_metrics, null, 2) : 'No metrics available'}
+
+**Status:** Active
+**Category:** ${this.getCampaignCategory(campaign.name)}`,
               embedding: queryEmbedding,
               metadata: {
                 type: 'campaign' as const,
@@ -367,22 +402,29 @@ export class RAGVectorStore {
                 source_id: campaign.id,
                 created_at: campaign.created_at || new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                commission_rate: campaign.commission_rate
+                commission_rate: campaign.commission_rate,
+                category: this.getCampaignCategory(campaign.name)
               }
             },
-            similarity: 0.95 - (index * 0.1),
+            similarity: 0.95 - (index * 0.05),
             rank: index + 1
           });
         });
       }
       
-      // Add academy results
+      // Add academy results with consistent formatting
       if (academy && academy.length > 0) {
         academy.forEach((item, index) => {
           mockResults.push({
             document: {
               id: item.id,
-              content: `${item.title} - ${item.content || ''}`,
+              content: `**Academy: ${item.title}**
+
+**Content:** ${item.content || 'No content available'}
+
+**Category:** ${item.category || 'General'}
+
+**URL:** ${item.url || 'No URL available'}`,
               embedding: queryEmbedding,
               metadata: {
                 type: 'academy' as const,
@@ -393,7 +435,7 @@ export class RAGVectorStore {
                 category: item.category
               }
             },
-            similarity: 0.85 - (index * 0.1),
+            similarity: 0.85 - (index * 0.05),
             rank: campaigns ? campaigns.length + index + 1 : index + 1
           });
         });
