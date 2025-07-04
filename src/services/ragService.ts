@@ -1,5 +1,6 @@
 
 import { supabase } from "@/integrations/supabase/client";
+import { ragVectorStore } from "./ragVectorStore";
 
 // RAG Service - Main orchestrator for Retrieval-Augmented Generation
 export class RAGService {
@@ -19,7 +20,7 @@ export class RAGService {
     if (this.initialized) return;
     
     console.log('Initializing RAG Service...');
-    // TODO: Initialize embedding service, vector store, and LLM service
+    await ragVectorStore.initialize();
     this.initialized = true;
   }
 
@@ -37,18 +38,13 @@ export class RAGService {
 
       console.log('Processing RAG query:', query);
 
-      // Phase 1: Query preprocessing and embedding
+      // Phase 1: Query preprocessing
       const processedQuery = await this.preprocessQuery(query);
-      const queryEmbedding = await this.generateQueryEmbedding(processedQuery);
 
-      // Phase 2: Retrieve relevant content
-      const retrievedContent = await this.retrieveRelevantContent(
-        queryEmbedding, 
-        processedQuery,
-        context
-      );
+      // Phase 2: Retrieve relevant content using vector store
+      const retrievedContent = await this.retrieveRelevantContent(processedQuery, context);
 
-      // Phase 3: Generate response using LLM
+      // Phase 3: Generate response using retrieved content
       const generatedResponse = await this.generateResponse(
         processedQuery,
         retrievedContent,
@@ -65,9 +61,9 @@ export class RAGService {
     } catch (error) {
       console.error('RAG processing error:', error);
       
-      // Fallback to rule-based system (current implementation)
+      // Fallback to basic response
       return {
-        response: "I encountered an issue processing your query. Please try rephrasing your question.",
+        response: `I encountered an issue processing your query: "${query}". Please try rephrasing your question or contact support if the issue persists.`,
         sources: [],
         confidence: 0,
         fallbackUsed: true
@@ -76,33 +72,35 @@ export class RAGService {
   }
 
   private async preprocessQuery(query: string): Promise<string> {
-    // TODO: Implement query preprocessing
-    // - Clean and normalize text
-    // - Expand abbreviations
-    // - Handle typos
-    // - Extract intent
+    // Clean and normalize text
     return query.trim().toLowerCase();
   }
 
-  private async generateQueryEmbedding(query: string): Promise<number[]> {
-    // TODO: Implement embedding generation
-    // This will use OpenAI embeddings or similar service
-    console.log('Generating embedding for query:', query);
-    return []; // Placeholder
-  }
-
   private async retrieveRelevantContent(
-    queryEmbedding: number[],
     query: string,
     context?: any
   ): Promise<any[]> {
-    // TODO: Implement vector similarity search
-    // - Search vector database
-    // - Apply metadata filters
-    // - Rank results by relevance
-    // - Return top K results
     console.log('Retrieving relevant content for:', query);
-    return []; // Placeholder
+    
+    try {
+      // Use hybrid search to get the best results
+      const results = await ragVectorStore.hybridSearch(
+        [], // Empty embedding for now (mock)
+        query,
+        {
+          limit: 5,
+          vectorWeight: 0.3,
+          keywordWeight: 0.7, // Give more weight to keyword matching for now
+          filter: {}
+        }
+      );
+
+      console.log('Retrieved content results:', results.length);
+      return results;
+    } catch (error) {
+      console.error('Content retrieval failed:', error);
+      return [];
+    }
   }
 
   private async generateResponse(
@@ -110,16 +108,53 @@ export class RAGService {
     retrievedContent: any[],
     context?: any
   ): Promise<{ text: string; confidence: number }> {
-    // TODO: Implement LLM-based response generation
-    // - Create context-aware prompt
-    // - Inject retrieved content
-    // - Generate natural response
-    // - Calculate confidence score
-    console.log('Generating response for:', query);
+    console.log('Generating response for:', query, 'with', retrievedContent.length, 'sources');
     
+    if (retrievedContent.length === 0) {
+      return {
+        text: `I couldn't find specific information about "${query}". Could you please rephrase your question or be more specific about what you're looking for?`,
+        confidence: 0.2
+      };
+    }
+
+    // Create a comprehensive response using the retrieved content
+    let response = `Based on your query about **"${query}"**, here's what I found:\n\n`;
+    
+    // Add each retrieved document's content
+    retrievedContent.forEach((result, index) => {
+      const doc = result.document;
+      response += `${doc.content}\n\n`;
+      
+      // Add separator between multiple results
+      if (index < retrievedContent.length - 1) {
+        response += "---\n\n";
+      }
+    });
+
+    // Add summary if multiple results
+    if (retrievedContent.length > 1) {
+      response += `\n**Summary**: I found ${retrievedContent.length} relevant items that match your query. `;
+      
+      const campaignCount = retrievedContent.filter(r => r.document.metadata.type === 'campaign').length;
+      const academyCount = retrievedContent.filter(r => r.document.metadata.type === 'academy').length;
+      
+      if (campaignCount > 0) {
+        response += `${campaignCount} campaign${campaignCount > 1 ? 's' : ''} `;
+      }
+      if (academyCount > 0) {
+        response += `${academyCount} academy article${academyCount > 1 ? 's' : ''} `;
+      }
+      
+      response += "are available for you to explore.";
+    }
+
+    // Calculate confidence based on relevance scores
+    const avgSimilarity = retrievedContent.reduce((sum, result) => sum + result.similarity, 0) / retrievedContent.length;
+    const confidence = Math.min(0.95, Math.max(0.3, avgSimilarity));
+
     return {
-      text: "RAG response generation not yet implemented.",
-      confidence: 0.5
+      text: response,
+      confidence
     };
   }
 
@@ -132,14 +167,28 @@ export class RAGService {
       llm: boolean;
     };
   }> {
-    return {
-      status: 'degraded',
-      services: {
-        embedding: false,
-        vectorStore: false,
-        llm: false
-      }
-    };
+    try {
+      await ragVectorStore.initialize();
+      const stats = await ragVectorStore.getStats();
+      
+      return {
+        status: stats.totalDocuments > 0 ? 'degraded' : 'unhealthy',
+        services: {
+          embedding: false, // Not implemented yet
+          vectorStore: stats.totalDocuments > 0,
+          llm: false // Not implemented yet
+        }
+      };
+    } catch (error) {
+      return {
+        status: 'unhealthy',
+        services: {
+          embedding: false,
+          vectorStore: false,
+          llm: false
+        }
+      };
+    }
   }
 }
 
