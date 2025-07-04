@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 // RAG Vector Store - Handles vector storage and similarity search
@@ -190,15 +189,36 @@ export class RAGVectorStore {
     options: any
   ): Promise<SimilaritySearchResult[]> {
     try {
+      console.log('Searching campaigns with query:', queryText);
+      
+      // Get all campaigns first, then filter
       const { data: campaigns, error } = await supabase
         .from('campaigns')
-        .select('*')
-        .or(`name.ilike.%${queryText}%,description.ilike.%${queryText}%`)
-        .limit(options.limit || 5);
+        .select('*');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Campaign search error:', error);
+        throw error;
+      }
 
-      return (campaigns || []).map((campaign, index) => ({
+      console.log('Found campaigns:', campaigns?.length || 0);
+
+      if (!campaigns || campaigns.length === 0) {
+        return [];
+      }
+
+      // Filter campaigns based on query text
+      const filteredCampaigns = campaigns.filter(campaign => {
+        const searchText = queryText.toLowerCase();
+        const nameMatch = campaign.name.toLowerCase().includes(searchText);
+        const descMatch = campaign.description?.toLowerCase().includes(searchText);
+        
+        return nameMatch || descMatch;
+      });
+
+      console.log('Filtered campaigns:', filteredCampaigns.length);
+
+      return filteredCampaigns.map((campaign, index) => ({
         document: {
           id: campaign.id,
           content: `${campaign.name}\n${campaign.description || ''}`,
@@ -213,7 +233,7 @@ export class RAGVectorStore {
             performance_metrics: campaign.performance_metrics
           }
         },
-        similarity: 0.8, // Mock similarity score
+        similarity: 0.8 - (index * 0.1), // Mock similarity score with decreasing relevance
         rank: index + 1
       }));
     } catch (error) {
@@ -227,15 +247,36 @@ export class RAGVectorStore {
     options: any
   ): Promise<SimilaritySearchResult[]> {
     try {
+      console.log('Searching academy with query:', queryText);
+      
+      // Get all academy items first, then filter
       const { data: academyItems, error } = await supabase
         .from('academy')
-        .select('*')
-        .or(`title.ilike.%${queryText}%,content.ilike.%${queryText}%`)
-        .limit(options.limit || 5);
+        .select('*');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Academy search error:', error);
+        throw error;
+      }
 
-      return (academyItems || []).map((item, index) => ({
+      console.log('Found academy items:', academyItems?.length || 0);
+
+      if (!academyItems || academyItems.length === 0) {
+        return [];
+      }
+
+      // Filter academy items based on query text
+      const filteredAcademy = academyItems.filter(item => {
+        const searchText = queryText.toLowerCase();
+        const titleMatch = item.title.toLowerCase().includes(searchText);
+        const contentMatch = item.content?.toLowerCase().includes(searchText);
+        
+        return titleMatch || contentMatch;
+      });
+
+      console.log('Filtered academy items:', filteredAcademy.length);
+
+      return filteredAcademy.map((item, index) => ({
         document: {
           id: item.id,
           content: `${item.title}\n${item.content || ''}`,
@@ -250,7 +291,7 @@ export class RAGVectorStore {
             url: item.url
           }
         },
-        similarity: 0.75, // Mock similarity score
+        similarity: 0.75 - (index * 0.1), // Mock similarity score with decreasing relevance
         rank: index + 1
       }));
     } catch (error) {
@@ -305,41 +346,64 @@ export class RAGVectorStore {
   ): Promise<SimilaritySearchResult[]> {
     console.log('Using mock similarity search');
     
-    // Return a mix of campaign and academy mock results
-    return [
-      {
-        document: {
-          id: 'mock-campaign-1',
-          content: 'Summer Fashion Sale - Great deals on summer clothing with high conversion rates',
-          embedding: queryEmbedding,
-          metadata: {
-            type: 'campaign' as const,
-            title: 'Summer Fashion Sale',
-            source_id: '1',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
-        },
-        similarity: 0.95,
-        rank: 1
-      },
-      {
-        document: {
-          id: 'mock-academy-1',
-          content: 'Affiliate Marketing Basics - Learn the fundamentals of affiliate marketing',
-          embedding: queryEmbedding,
-          metadata: {
-            type: 'academy' as const,
-            title: 'Affiliate Marketing Basics',
-            source_id: '1',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
-        },
-        similarity: 0.85,
-        rank: 2
+    // Get real data for mock results
+    try {
+      const { data: campaigns } = await supabase.from('campaigns').select('*').limit(2);
+      const { data: academy } = await supabase.from('academy').select('*').limit(2);
+      
+      const mockResults: SimilaritySearchResult[] = [];
+      
+      // Add campaign results
+      if (campaigns && campaigns.length > 0) {
+        campaigns.forEach((campaign, index) => {
+          mockResults.push({
+            document: {
+              id: campaign.id,
+              content: `${campaign.name} - ${campaign.description || ''}`,
+              embedding: queryEmbedding,
+              metadata: {
+                type: 'campaign' as const,
+                title: campaign.name,
+                source_id: campaign.id,
+                created_at: campaign.created_at || new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                commission_rate: campaign.commission_rate
+              }
+            },
+            similarity: 0.95 - (index * 0.1),
+            rank: index + 1
+          });
+        });
       }
-    ];
+      
+      // Add academy results
+      if (academy && academy.length > 0) {
+        academy.forEach((item, index) => {
+          mockResults.push({
+            document: {
+              id: item.id,
+              content: `${item.title} - ${item.content || ''}`,
+              embedding: queryEmbedding,
+              metadata: {
+                type: 'academy' as const,
+                title: item.title,
+                source_id: item.id,
+                created_at: item.created_at || new Date().toISOString(),
+                updated_at: item.updated_at || new Date().toISOString(),
+                category: item.category
+              }
+            },
+            similarity: 0.85 - (index * 0.1),
+            rank: campaigns ? campaigns.length + index + 1 : index + 1
+          });
+        });
+      }
+      
+      return mockResults;
+    } catch (error) {
+      console.error('Error getting mock data:', error);
+      return [];
+    }
   }
 
   // Delete documents by filter (mock implementation)
