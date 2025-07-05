@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 
 // RAG Vector Store - Handles vector storage and similarity search
@@ -184,6 +185,18 @@ export class RAGVectorStore {
     }
   }
 
+  private formatCampaignContent(campaign: any): string {
+    const metrics = campaign.performance_metrics || {};
+    const conversionRate = metrics.conversion_rate || 0;
+    const clicks = metrics.clicks || 0;
+    const sales = metrics.sales || 0;
+
+    return `${campaign.name}
+${campaign.commission_rate}%
+${campaign.description || 'No description available'}
+Performance: ${conversionRate}% conversion • ${clicks} clicks • ${sales} sales`;
+  }
+
   private async searchCampaigns(
     queryText: string,
     options: any
@@ -221,16 +234,7 @@ export class RAGVectorStore {
       return filteredCampaigns.map((campaign, index) => ({
         document: {
           id: campaign.id,
-          content: `**Campaign: ${campaign.name}**
-
-**Description:** ${campaign.description || 'No description available'}
-
-**Commission Rate:** ${campaign.commission_rate}%
-
-**Performance Metrics:** ${campaign.performance_metrics ? JSON.stringify(campaign.performance_metrics, null, 2) : 'No metrics available'}
-
-**Status:** Active
-**Category:** ${this.getCampaignCategory(campaign.name)}`,
+          content: this.formatCampaignContent(campaign),
           embedding: [], // Mock embedding
           metadata: {
             type: 'campaign' as const,
@@ -385,16 +389,7 @@ export class RAGVectorStore {
           mockResults.push({
             document: {
               id: campaign.id,
-              content: `**Campaign: ${campaign.name}**
-
-**Description:** ${campaign.description || 'No description available'}
-
-**Commission Rate:** ${campaign.commission_rate}%
-
-**Performance Metrics:** ${campaign.performance_metrics ? JSON.stringify(campaign.performance_metrics, null, 2) : 'No metrics available'}
-
-**Status:** Active
-**Category:** ${this.getCampaignCategory(campaign.name)}`,
+              content: this.formatCampaignContent(campaign),
               embedding: queryEmbedding,
               metadata: {
                 type: 'campaign' as const,
