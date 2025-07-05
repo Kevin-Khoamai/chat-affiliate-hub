@@ -203,19 +203,55 @@ export class RAGVectorStore {
   }
 
   private isSpecificCampaignQuery(queryText: string, campaignName: string): boolean {
-    const query = queryText.toLowerCase();
-    const name = campaignName.toLowerCase();
+    const query = queryText.toLowerCase().trim();
+    const name = campaignName.toLowerCase().trim();
     
-    console.log('Checking specific campaign query:', query, 'against:', name);
+    console.log('Checking specific campaign query:', `"${query}"`, 'against campaign:', `"${name}"`);
     
-    // Check if the campaign name appears in the query text
+    // Normalize spaces and special characters for better matching
+    const normalizeText = (text: string) => {
+      return text.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    };
+    
+    const normalizedQuery = normalizeText(query);
+    const normalizedName = normalizeText(name);
+    
+    console.log('Normalized query:', `"${normalizedQuery}"`, 'Normalized name:', `"${normalizedName}"`);
+    
+    // Check if the normalized campaign name appears in the normalized query
+    if (normalizedQuery.includes(normalizedName)) {
+      console.log('Campaign name found in query (normalized match)');
+      return true;
+    }
+    
+    // Also try exact match with original strings
     if (query.includes(name)) {
-      console.log('Campaign name found in query');
+      console.log('Campaign name found in query (exact match)');
       return true;
     }
 
-    // Check common query patterns
-    const patterns = [
+    // Check for partial word matches (in case of "home garden" vs "home & garden")
+    const queryWords = normalizedQuery.split(' ');
+    const nameWords = normalizedName.split(' ');
+    
+    // If all significant words from campaign name are present in query
+    const significantNameWords = nameWords.filter(word => word.length > 2); // ignore short words like "&"
+    const matchingWords = significantNameWords.filter(word => 
+      queryWords.some(queryWord => queryWord.includes(word) || word.includes(queryWord))
+    );
+    
+    const hasAllSignificantWords = matchingWords.length === significantNameWords.length && significantNameWords.length > 0;
+    
+    console.log('Word matching analysis:', {
+      queryWords,
+      nameWords,
+      significantNameWords,
+      matchingWords,
+      hasAllSignificantWords
+    });
+
+    // Check common query patterns that indicate specific campaign request
+    const specificPatterns = [
       'show me',
       'details',
       'campaign',
@@ -224,11 +260,10 @@ export class RAGVectorStore {
       'information'
     ];
     
-    const hasPattern = patterns.some(pattern => query.includes(pattern));
-    const hasName = query.includes(name);
+    const hasSpecificPattern = specificPatterns.some(pattern => query.includes(pattern));
     
-    const isSpecific = hasPattern && hasName;
-    console.log('Pattern check result:', { hasPattern, hasName, isSpecific });
+    const isSpecific = hasAllSignificantWords && hasSpecificPattern;
+    console.log('Final decision:', { hasAllSignificantWords, hasSpecificPattern, isSpecific });
     
     return isSpecific;
   }
