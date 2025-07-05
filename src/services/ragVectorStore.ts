@@ -197,6 +197,23 @@ ${campaign.description || 'No description available'}
 Performance: ${conversionRate}% conversion • ${clicks} clicks • ${sales} sales`;
   }
 
+  private isSpecificCampaignQuery(queryText: string, campaignName: string): boolean {
+    const query = queryText.toLowerCase();
+    const name = campaignName.toLowerCase();
+    
+    // Check if query specifically asks for this campaign
+    const specificPatterns = [
+      `show me ${name}`,
+      `${name} details`,
+      `${name} campaign`,
+      `tell me about ${name}`,
+      `what is ${name}`,
+      `${name} information`
+    ];
+    
+    return specificPatterns.some(pattern => query.includes(pattern));
+  }
+
   private async searchCampaigns(
     queryText: string,
     options: any
@@ -220,7 +237,35 @@ Performance: ${conversionRate}% conversion • ${clicks} clicks • ${sales} sal
         return [];
       }
 
-      // Filter campaigns based on query text
+      // Check if this is a specific campaign query
+      const specificCampaign = campaigns.find(campaign => 
+        this.isSpecificCampaignQuery(queryText, campaign.name)
+      );
+
+      if (specificCampaign) {
+        console.log('Found specific campaign match:', specificCampaign.name);
+        return [{
+          document: {
+            id: specificCampaign.id,
+            content: this.formatCampaignContent(specificCampaign),
+            embedding: [], // Mock embedding
+            metadata: {
+              type: 'campaign' as const,
+              title: specificCampaign.name,
+              source_id: specificCampaign.id,
+              created_at: specificCampaign.created_at || new Date().toISOString(),
+              updated_at: specificCampaign.updated_at || new Date().toISOString(),
+              commission_rate: specificCampaign.commission_rate,
+              performance_metrics: specificCampaign.performance_metrics,
+              category: this.getCampaignCategory(specificCampaign.name)
+            }
+          },
+          similarity: 0.95, // High similarity for exact match
+          rank: 1
+        }];
+      }
+
+      // Filter campaigns based on query text for general searches
       const filteredCampaigns = campaigns.filter(campaign => {
         const searchText = queryText.toLowerCase();
         const nameMatch = campaign.name?.toLowerCase().includes(searchText);
