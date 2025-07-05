@@ -297,6 +297,7 @@ export class RAGVectorStore {
         console.log('Testing campaign:', campaign.name);
         if (this.isSpecificCampaignQuery(queryText, campaign.name)) {
           console.log('Found specific campaign match:', campaign.name);
+          // Return ONLY this specific campaign
           return [{
             document: {
               id: campaign.id,
@@ -319,6 +320,9 @@ export class RAGVectorStore {
         }
       }
 
+      // If no specific match found, do general search
+      console.log('No specific campaign match found, doing general search');
+      
       // Filter campaigns based on query text for general searches
       const filteredCampaigns = campaigns.filter(campaign => {
         const searchText = queryText.toLowerCase();
@@ -328,7 +332,7 @@ export class RAGVectorStore {
         return nameMatch || descMatch;
       });
 
-      console.log('Filtered campaigns:', filteredCampaigns.length);
+      console.log('Filtered campaigns for general search:', filteredCampaigns.length);
 
       return filteredCampaigns.map((campaign, index) => ({
         document: {
