@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 // RAG Vector Store - Handles vector storage and similarity search
@@ -191,27 +190,47 @@ export class RAGVectorStore {
     const clicks = metrics.clicks || 0;
     const sales = metrics.sales || 0;
 
-    return `${campaign.name}
-${campaign.commission_rate}%
-${campaign.description || 'No description available'}
-Performance: ${conversionRate}% conversion • ${clicks} clicks • ${sales} sales`;
+    return `**${campaign.name}**
+
+**Commission Rate:** ${campaign.commission_rate}%
+
+**Description:** ${campaign.description || 'No description available'}
+
+**Performance Metrics:**
+• Conversion Rate: ${conversionRate}%
+• Clicks: ${clicks}
+• Sales: ${sales}`;
   }
 
   private isSpecificCampaignQuery(queryText: string, campaignName: string): boolean {
     const query = queryText.toLowerCase();
     const name = campaignName.toLowerCase();
     
-    // Check if query specifically asks for this campaign
-    const specificPatterns = [
-      `show me ${name}`,
-      `${name} details`,
-      `${name} campaign`,
-      `tell me about ${name}`,
-      `what is ${name}`,
-      `${name} information`
+    console.log('Checking specific campaign query:', query, 'against:', name);
+    
+    // Check if the campaign name appears in the query text
+    if (query.includes(name)) {
+      console.log('Campaign name found in query');
+      return true;
+    }
+
+    // Check common query patterns
+    const patterns = [
+      'show me',
+      'details',
+      'campaign',
+      'tell me about',
+      'what is',
+      'information'
     ];
     
-    return specificPatterns.some(pattern => query.includes(pattern));
+    const hasPattern = patterns.some(pattern => query.includes(pattern));
+    const hasName = query.includes(name);
+    
+    const isSpecific = hasPattern && hasName;
+    console.log('Pattern check result:', { hasPattern, hasName, isSpecific });
+    
+    return isSpecific;
   }
 
   private async searchCampaigns(
@@ -238,31 +257,31 @@ Performance: ${conversionRate}% conversion • ${clicks} clicks • ${sales} sal
       }
 
       // Check if this is a specific campaign query
-      const specificCampaign = campaigns.find(campaign => 
-        this.isSpecificCampaignQuery(queryText, campaign.name)
-      );
-
-      if (specificCampaign) {
-        console.log('Found specific campaign match:', specificCampaign.name);
-        return [{
-          document: {
-            id: specificCampaign.id,
-            content: this.formatCampaignContent(specificCampaign),
-            embedding: [], // Mock embedding
-            metadata: {
-              type: 'campaign' as const,
-              title: specificCampaign.name,
-              source_id: specificCampaign.id,
-              created_at: specificCampaign.created_at || new Date().toISOString(),
-              updated_at: specificCampaign.updated_at || new Date().toISOString(),
-              commission_rate: specificCampaign.commission_rate,
-              performance_metrics: specificCampaign.performance_metrics,
-              category: this.getCampaignCategory(specificCampaign.name)
-            }
-          },
-          similarity: 0.95, // High similarity for exact match
-          rank: 1
-        }];
+      console.log('Checking for specific campaign matches...');
+      for (const campaign of campaigns) {
+        console.log('Testing campaign:', campaign.name);
+        if (this.isSpecificCampaignQuery(queryText, campaign.name)) {
+          console.log('Found specific campaign match:', campaign.name);
+          return [{
+            document: {
+              id: campaign.id,
+              content: this.formatCampaignContent(campaign),
+              embedding: [], // Mock embedding
+              metadata: {
+                type: 'campaign' as const,
+                title: campaign.name,
+                source_id: campaign.id,
+                created_at: campaign.created_at || new Date().toISOString(),
+                updated_at: campaign.updated_at || new Date().toISOString(),
+                commission_rate: campaign.commission_rate,
+                performance_metrics: campaign.performance_metrics,
+                category: this.getCampaignCategory(campaign.name)
+              }
+            },
+            similarity: 0.95, // High similarity for exact match
+            rank: 1
+          }];
+        }
       }
 
       // Filter campaigns based on query text for general searches
