@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Send, Zap, Database, Brain, Activity, Webhook } from 'lucide-react';
+import { Bot, Send, Zap, Database, Brain, Activity, Webhook, TestTube } from 'lucide-react';
 import { ragService } from '@/services/ragService';
 import { n8nWebhookService } from '@/services/n8nWebhookService';
 import { useToast } from "@/components/ui/use-toast";
@@ -33,6 +33,7 @@ const RAGChatInterface = () => {
   const [ragStatus, setRAGStatus] = useState<'inactive' | 'initializing' | 'active' | 'error'>('inactive');
   const [n8nStatus, setN8nStatus] = useState<'inactive' | 'healthy' | 'unhealthy'>('inactive');
   const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substring(2)}`);
+  const [testingWebhook, setTestingWebhook] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -142,8 +143,25 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
       // Process query through RAG system
       const result = await ragService.processQuery(currentQuery);
       
-      // Send message to n8n webhook in parallel
-      const n8nPromise = n8nWebhookService.sendMessage(sessionId, currentQuery);
+      // Prepare enhanced user context (you might want to get this from props or context)
+      const userContext = {
+        id: 'current-user-id', // Replace with actual user ID
+        name: 'Current User', // Replace with actual user name
+        email: 'user@example.com' // Replace with actual user email
+      };
+
+      // Send comprehensive message to n8n webhook
+      const n8nPromise = n8nWebhookService.sendMessage(
+        sessionId, 
+        currentQuery,
+        'rag-integration',
+        userContext,
+        {
+          sources: result.sources,
+          confidence: result.confidence,
+          fallbackUsed: result.fallbackUsed
+        }
+      );
       
       const processingTime = Date.now() - startTime;
 
@@ -171,7 +189,7 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
       const updatedMessages = [...newMessages, botMessage];
       setMessages(updatedMessages);
 
-      // Show toast for fallback usage
+      // Show enhanced feedback
       if (result.fallbackUsed) {
         toast({
           title: "Fallback Mode Used",
@@ -180,8 +198,14 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
         });
       }
 
-      // Show toast for n8n integration status
-      if (!n8nResult.success) {
+      if (n8nResult.success) {
+        console.log('n8n webhook response data:', n8nResult.data);
+        toast({
+          title: "n8n Integration Success",
+          description: "Message successfully sent to n8n workflow for processing.",
+          variant: "default",
+        });
+      } else {
         toast({
           title: "n8n Integration Warning",
           description: `Failed to send message to n8n workflow: ${n8nResult.error}`,
@@ -218,6 +242,36 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const testN8nWebhook = async () => {
+    setTestingWebhook(true);
+    try {
+      const result = await n8nWebhookService.testWebhook();
+      
+      if (result.success) {
+        toast({
+          title: "Webhook Test Successful",
+          description: "n8n webhook is working correctly with sample data.",
+          variant: "default",
+        });
+        console.log('Webhook test result:', result.data);
+      } else {
+        toast({
+          title: "Webhook Test Failed",
+          description: result.error || "Unknown error occurred",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Webhook Test Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setTestingWebhook(false);
     }
   };
 
@@ -294,9 +348,19 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
                 </Badge>
               </div>
             </CardTitle>
+            <Button
+              onClick={testN8nWebhook}
+              disabled={testingWebhook}
+              variant="outline"
+              size="sm"
+              className="border-white/30 text-white/70 hover:bg-white/10"
+            >
+              <TestTube className="w-4 h-4 mr-1" />
+              {testingWebhook ? 'Testing...' : 'Test n8n'}
+            </Button>
           </div>
           <p className="text-sm text-white/70">
-            Advanced AI assistant with semantic search, contextual understanding, and n8n workflow integration
+            Advanced AI assistant with semantic search, contextual understanding, and enhanced n8n workflow integration
           </p>
         </CardHeader>
 
