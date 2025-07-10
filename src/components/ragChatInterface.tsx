@@ -23,6 +23,7 @@ interface RAGMessage {
       sent: boolean;
       success?: boolean;
       error?: string;
+      retryAttempts?: number;
     };
   };
 }
