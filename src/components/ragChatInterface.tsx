@@ -1,11 +1,11 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Send, Zap, Database, Brain, Activity } from 'lucide-react';
+import { Bot, Send, Zap, Database, Brain, Activity, Webhook } from 'lucide-react';
 import { ragService } from '@/services/ragService';
+import { n8nWebhookService } from '@/services/n8nWebhookService';
 import { useToast } from "@/components/ui/use-toast";
 
 interface RAGMessage {
@@ -18,6 +18,11 @@ interface RAGMessage {
     confidence?: number;
     fallbackUsed?: boolean;
     processingTime?: number;
+    n8nIntegration?: {
+      sent: boolean;
+      success?: boolean;
+      error?: string;
+    };
   };
 }
 
@@ -26,36 +31,51 @@ const RAGChatInterface = () => {
   const [messages, setMessages] = useState<RAGMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [ragStatus, setRAGStatus] = useState<'inactive' | 'initializing' | 'active' | 'error'>('inactive');
+  const [n8nStatus, setN8nStatus] = useState<'inactive' | 'healthy' | 'unhealthy'>('inactive');
+  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substring(2)}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    initializeRAG();
+    initializeServices();
     loadWelcomeMessage();
   }, []);
 
-  const initializeRAG = async () => {
+  const initializeServices = async () => {
     try {
       setRAGStatus('initializing');
       await ragService.initialize();
       
-      // Check health status
-      const health = await ragService.healthCheck();
-      setRAGStatus(health.status === 'healthy' ? 'active' : 'error');
+      // Check RAG health status
+      const ragHealth = await ragService.healthCheck();
+      setRAGStatus(ragHealth.status === 'healthy' ? 'active' : 'error');
       
-      if (health.status !== 'healthy') {
+      // Check n8n webhook health
+      const n8nHealth = await n8nWebhookService.healthCheck();
+      setN8nStatus(n8nHealth.status);
+      
+      if (ragHealth.status !== 'healthy') {
         toast({
           title: "RAG System Status",
           description: "Running in limited mode. Some features may use fallback logic.",
           variant: "default",
         });
       }
+
+      if (n8nHealth.status === 'unhealthy') {
+        toast({
+          title: "n8n Webhook Status",
+          description: "n8n webhook is not responding. Integration features may be limited.",
+          variant: "default",
+        });
+      }
     } catch (error) {
-      console.error('RAG initialization failed:', error);
+      console.error('Service initialization failed:', error);
       setRAGStatus('error');
+      setN8nStatus('unhealthy');
       toast({
-        title: "RAG System Error",
-        description: "Failed to initialize RAG system. Using fallback mode.",
+        title: "Service Initialization Error",
+        description: "Failed to initialize services. Using fallback mode.",
         variant: "destructive",
       });
     }
@@ -65,21 +85,22 @@ const RAGChatInterface = () => {
     const welcomeMessage: RAGMessage = {
       id: '1',
       type: 'bot',
-      content: `🚀 **RAG-Enhanced AI Assistant**
+      content: `🚀 **RAG-Enhanced AI Assistant with n8n Integration**
 
-I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). I can now:
+I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) and integrated with n8n workflow automation. I can now:
 
 • **🔍 Semantic Search**: Find relevant information using meaning, not just keywords
 • **🧠 Contextual Understanding**: Provide more accurate, context-aware responses  
 • **📊 Source Attribution**: Show you exactly where my answers come from
 • **⚡ Intelligent Retrieval**: Access the most relevant campaigns and academy content
+• **🔗 n8n Integration**: Automatically trigger workflows and external processes
 
 **Try these enhanced queries:**
 • "What are the best performing campaigns for beginners?"
 • "How do I optimize conversion rates for fashion campaigns?"
 • "Show me advanced affiliate marketing strategies"
 
-*Note: RAG system is currently in development mode. Some features may use mock data.*`,
+*Note: Your session ID is \`${sessionId}\`. All messages are also sent to the n8n workflow for processing.*`,
       timestamp: new Date().toISOString(),
       metadata: {
         confidence: 1.0,
@@ -111,6 +132,7 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
+    const currentQuery = query;
     setQuery('');
     setLoading(true);
 
@@ -118,9 +140,15 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
       const startTime = Date.now();
       
       // Process query through RAG system
-      const result = await ragService.processQuery(userMessage.content);
+      const result = await ragService.processQuery(currentQuery);
+      
+      // Send message to n8n webhook in parallel
+      const n8nPromise = n8nWebhookService.sendMessage(sessionId, currentQuery);
       
       const processingTime = Date.now() - startTime;
+
+      // Wait for n8n webhook response
+      const n8nResult = await n8nPromise;
 
       const botMessage: RAGMessage = {
         id: (Date.now() + 1).toString(),
@@ -131,7 +159,12 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
           sources: result.sources.map(s => s.document?.metadata?.title || s.name || 'Unknown').filter(Boolean),
           confidence: result.confidence,
           fallbackUsed: result.fallbackUsed,
-          processingTime
+          processingTime,
+          n8nIntegration: {
+            sent: true,
+            success: n8nResult.success,
+            error: n8nResult.error
+          }
         }
       };
 
@@ -147,6 +180,15 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
         });
       }
 
+      // Show toast for n8n integration status
+      if (!n8nResult.success) {
+        toast({
+          title: "n8n Integration Warning",
+          description: `Failed to send message to n8n workflow: ${n8nResult.error}`,
+          variant: "default",
+        });
+      }
+
     } catch (error: any) {
       console.error('RAG query processing error:', error);
       
@@ -157,7 +199,12 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
         timestamp: new Date().toISOString(),
         metadata: {
           confidence: 0,
-          fallbackUsed: true
+          fallbackUsed: true,
+          n8nIntegration: {
+            sent: false,
+            success: false,
+            error: 'Query processing failed'
+          }
         }
       };
       
@@ -200,6 +247,28 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
     }
   };
 
+  const getN8nStatusIcon = () => {
+    switch (n8nStatus) {
+      case 'healthy':
+        return <Webhook className="w-4 h-4 text-green-400" />;
+      case 'unhealthy':
+        return <Webhook className="w-4 h-4 text-red-400" />;
+      default:
+        return <Webhook className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getN8nStatusText = () => {
+    switch (n8nStatus) {
+      case 'healthy':
+        return 'n8n Connected';
+      case 'unhealthy':
+        return 'n8n Offline';
+      default:
+        return 'n8n Inactive';
+    }
+  };
+
   return (
     <div className="max-w-full mx-auto">
       <Card className="bg-white/10 backdrop-blur-sm border-white/20 text-white h-[calc(100vh-100px)] flex flex-col">
@@ -208,17 +277,26 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
             <CardTitle className="flex items-center">
               <Bot className="w-5 h-5 mr-2" />
               RAG-Enhanced AI Assistant
-              <Badge 
-                variant="outline" 
-                className="ml-3 border-white/30 text-white/70 bg-gray-700/50"
-              >
-                {getRAGStatusIcon()}
-                <span className="ml-1">{getRAGStatusText()}</span>
-              </Badge>
+              <div className="flex space-x-2 ml-3">
+                <Badge 
+                  variant="outline" 
+                  className="border-white/30 text-white/70 bg-gray-700/50"
+                >
+                  {getRAGStatusIcon()}
+                  <span className="ml-1">{getRAGStatusText()}</span>
+                </Badge>
+                <Badge 
+                  variant="outline" 
+                  className="border-white/30 text-white/70 bg-gray-700/50"
+                >
+                  {getN8nStatusIcon()}
+                  <span className="ml-1">{getN8nStatusText()}</span>
+                </Badge>
+              </div>
             </CardTitle>
           </div>
           <p className="text-sm text-white/70">
-            Advanced AI assistant with semantic search and contextual understanding
+            Advanced AI assistant with semantic search, contextual understanding, and n8n workflow integration
           </p>
         </CardHeader>
 
@@ -249,6 +327,19 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
                           {Math.round(message.metadata.confidence * 100)}% confident
                         </Badge>
                       )}
+                      {message.metadata?.n8nIntegration?.sent && (
+                        <Badge 
+                          variant="outline" 
+                          className={`ml-2 text-xs border-white/30 ${
+                            message.metadata.n8nIntegration.success 
+                              ? 'text-green-400' 
+                              : 'text-red-400'
+                          }`}
+                        >
+                          <Webhook className="w-3 h-3 mr-1" />
+                          {message.metadata.n8nIntegration.success ? 'n8n ✓' : 'n8n ✗'}
+                        </Badge>
+                      )}
                     </div>
                   )}
                   
@@ -265,6 +356,11 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
                           <div>
                             📚 Sources: {message.metadata.sources.slice(0, 3).join(', ')}
                             {message.metadata.sources.length > 3 && ` +${message.metadata.sources.length - 3} more`}
+                          </div>
+                        )}
+                        {message.metadata.n8nIntegration?.sent && (
+                          <div className={message.metadata.n8nIntegration.success ? 'text-green-400' : 'text-red-400'}>
+                            🔗 n8n: {message.metadata.n8nIntegration.success ? 'Message sent successfully' : `Failed - ${message.metadata.n8nIntegration.error}`}
                           </div>
                         )}
                         {message.metadata.fallbackUsed && (
@@ -320,8 +416,9 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG). 
             </Button>
           </form>
           <div className="text-xs text-white/40 mt-1">
+            Session: {sessionId.split('-').pop()} • 
             RAG Status: {getRAGStatusText()} • 
-            Enhanced with semantic search and contextual understanding
+            n8n Status: {getN8nStatusText()}
           </div>
         </div>
       </Card>
