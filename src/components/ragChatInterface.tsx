@@ -1,9 +1,10 @@
+
 import { useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Send, Zap, Database, Brain, Activity, Webhook, TestTube } from 'lucide-react';
+import { Bot, Send, Zap, Database, Brain, Activity, Webhook, TestTube, AlertTriangle } from 'lucide-react';
 import { ragService } from '@/services/ragService';
 import { n8nWebhookService } from '@/services/n8nWebhookService';
 import { useToast } from "@/components/ui/use-toast";
@@ -34,6 +35,7 @@ const RAGChatInterface = () => {
   const [n8nStatus, setN8nStatus] = useState<'inactive' | 'healthy' | 'unhealthy'>('inactive');
   const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substring(2)}`);
   const [testingWebhook, setTestingWebhook] = useState(false);
+  const [webhookRetryCount, setWebhookRetryCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -47,11 +49,9 @@ const RAGChatInterface = () => {
       setRAGStatus('initializing');
       await ragService.initialize();
       
-      // Check RAG health status
       const ragHealth = await ragService.healthCheck();
       setRAGStatus(ragHealth.status === 'healthy' ? 'active' : 'error');
       
-      // Check n8n webhook health
       const n8nHealth = await n8nWebhookService.healthCheck();
       setN8nStatus(n8nHealth.status);
       
@@ -66,8 +66,8 @@ const RAGChatInterface = () => {
       if (n8nHealth.status === 'unhealthy') {
         toast({
           title: "n8n Webhook Status",
-          description: "n8n webhook is not responding. Integration features may be limited.",
-          variant: "default",
+          description: `Webhook unavailable: ${n8nHealth.error || 'Connection failed'}. Integration features will be limited.`,
+          variant: "destructive",
         });
       }
     } catch (error) {
@@ -88,7 +88,7 @@ const RAGChatInterface = () => {
       type: 'bot',
       content: `🚀 **RAG-Enhanced AI Assistant with n8n Integration**
 
-I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) and integrated with n8n workflow automation. I can now:
+I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) and integrated with n8n workflow automation. I can:
 
 • **🔍 Semantic Search**: Find relevant information using meaning, not just keywords
 • **🧠 Contextual Understanding**: Provide more accurate, context-aware responses  
@@ -101,7 +101,7 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
 • "How do I optimize conversion rates for fashion campaigns?"
 • "Show me advanced affiliate marketing strategies"
 
-*Note: Your session ID is \`${sessionId}\`. All messages are also sent to the n8n workflow for processing.*`,
+*Note: Your session ID is \`${sessionId}\`. All messages are processed through RAG and sent to n8n workflows.*`,
       timestamp: new Date().toISOString(),
       metadata: {
         confidence: 1.0,
@@ -140,17 +140,15 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
     try {
       const startTime = Date.now();
       
-      // Process query through RAG system
       const result = await ragService.processQuery(currentQuery);
       
-      // Prepare enhanced user context (you might want to get this from props or context)
       const userContext = {
-        id: 'current-user-id', // Replace with actual user ID
-        name: 'Current User', // Replace with actual user name
-        email: 'user@example.com' // Replace with actual user email
+        id: 'current-user-id',
+        name: 'Current User',
+        email: 'user@example.com'
       };
 
-      // Send comprehensive message to n8n webhook
+      // Send to n8n webhook with enhanced error handling
       const n8nPromise = n8nWebhookService.sendMessage(
         sessionId, 
         currentQuery,
@@ -164,9 +162,12 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
       );
       
       const processingTime = Date.now() - startTime;
-
-      // Wait for n8n webhook response
       const n8nResult = await n8nPromise;
+
+      // Update retry count for UI display
+      if (n8nResult.retryAttempts) {
+        setWebhookRetryCount(n8nResult.retryAttempts);
+      }
 
       const botMessage: RAGMessage = {
         id: (Date.now() + 1).toString(),
@@ -181,7 +182,8 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
           n8nIntegration: {
             sent: true,
             success: n8nResult.success,
-            error: n8nResult.error
+            error: n8nResult.error,
+            retryAttempts: n8nResult.retryAttempts
           }
         }
       };
@@ -189,7 +191,6 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
       const updatedMessages = [...newMessages, botMessage];
       setMessages(updatedMessages);
 
-      // Show enhanced feedback
       if (result.fallbackUsed) {
         toast({
           title: "Fallback Mode Used",
@@ -200,16 +201,20 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
 
       if (n8nResult.success) {
         console.log('n8n webhook response data:', n8nResult.data);
+        const retryText = n8nResult.retryAttempts && n8nResult.retryAttempts > 1 
+          ? ` (succeeded after ${n8nResult.retryAttempts} attempts)`
+          : '';
         toast({
           title: "n8n Integration Success",
-          description: "Message successfully sent to n8n workflow for processing.",
+          description: `Message successfully sent to n8n workflow${retryText}.`,
           variant: "default",
         });
       } else {
+        console.error('n8n webhook failed:', n8nResult.error);
         toast({
-          title: "n8n Integration Warning",
-          description: `Failed to send message to n8n workflow: ${n8nResult.error}`,
-          variant: "default",
+          title: "n8n Integration Failed",
+          description: `Webhook error: ${n8nResult.error}. Chat functionality continues normally.`,
+          variant: "destructive",
         });
       }
 
@@ -251,18 +256,26 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
       const result = await n8nWebhookService.testWebhook();
       
       if (result.success) {
+        const retryText = result.diagnostics?.retryAttempts && result.diagnostics.retryAttempts > 1 
+          ? ` (after ${result.diagnostics.retryAttempts} attempts)`
+          : '';
         toast({
           title: "Webhook Test Successful",
-          description: "n8n webhook is working correctly with sample data.",
+          description: `n8n webhook is working correctly${retryText}.`,
           variant: "default",
         });
-        console.log('Webhook test result:', result.data);
+        console.log('Webhook test result:', result);
+        
+        // Update n8n status to healthy if test passes
+        setN8nStatus('healthy');
       } else {
         toast({
           title: "Webhook Test Failed",
-          description: result.error || "Unknown error occurred",
+          description: `${result.error}. Check console for diagnostics.`,
           variant: "destructive",
         });
+        console.error('Webhook test diagnostics:', result.diagnostics);
+        setN8nStatus('unhealthy');
       }
     } catch (error: any) {
       toast({
@@ -270,6 +283,7 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
         description: error.message,
         variant: "destructive",
       });
+      setN8nStatus('unhealthy');
     } finally {
       setTestingWebhook(false);
     }
@@ -306,7 +320,7 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
       case 'healthy':
         return <Webhook className="w-4 h-4 text-green-400" />;
       case 'unhealthy':
-        return <Webhook className="w-4 h-4 text-red-400" />;
+        return <AlertTriangle className="w-4 h-4 text-red-400" />;
       default:
         return <Webhook className="w-4 h-4 text-gray-400" />;
     }
@@ -341,10 +355,15 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
                 </Badge>
                 <Badge 
                   variant="outline" 
-                  className="border-white/30 text-white/70 bg-gray-700/50"
+                  className={`border-white/30 text-white/70 ${
+                    n8nStatus === 'unhealthy' ? 'bg-red-900/30' : 'bg-gray-700/50'
+                  }`}
                 >
                   {getN8nStatusIcon()}
                   <span className="ml-1">{getN8nStatusText()}</span>
+                  {webhookRetryCount > 1 && (
+                    <span className="ml-1 text-xs">({webhookRetryCount}x)</span>
+                  )}
                 </Badge>
               </div>
             </CardTitle>
@@ -353,7 +372,9 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
               disabled={testingWebhook}
               variant="outline"
               size="sm"
-              className="border-white/30 text-white/70 hover:bg-white/10"
+              className={`border-white/30 text-white/70 hover:bg-white/10 ${
+                n8nStatus === 'unhealthy' ? 'border-red-400/50 text-red-300' : ''
+              }`}
             >
               <TestTube className="w-4 h-4 mr-1" />
               {testingWebhook ? 'Testing...' : 'Test n8n'}
@@ -362,6 +383,11 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
           <p className="text-sm text-white/70">
             Advanced AI assistant with semantic search, contextual understanding, and enhanced n8n workflow integration
           </p>
+          {n8nStatus === 'unhealthy' && (
+            <div className="text-xs text-red-300 bg-red-900/20 p-2 rounded border border-red-400/30">
+              ⚠️ n8n webhook is currently unavailable. RAG functionality continues normally, but workflow integration is disabled.
+            </div>
+          )}
         </CardHeader>
 
         {/* Messages */}
@@ -402,6 +428,10 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
                         >
                           <Webhook className="w-3 h-3 mr-1" />
                           {message.metadata.n8nIntegration.success ? 'n8n ✓' : 'n8n ✗'}
+                          {message.metadata.n8nIntegration.retryAttempts && 
+                           message.metadata.n8nIntegration.retryAttempts > 1 && (
+                            <span className="ml-1">({message.metadata.n8nIntegration.retryAttempts}x)</span>
+                          )}
                         </Badge>
                       )}
                     </div>
@@ -424,7 +454,10 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
                         )}
                         {message.metadata.n8nIntegration?.sent && (
                           <div className={message.metadata.n8nIntegration.success ? 'text-green-400' : 'text-red-400'}>
-                            🔗 n8n: {message.metadata.n8nIntegration.success ? 'Message sent successfully' : `Failed - ${message.metadata.n8nIntegration.error}`}
+                            🔗 n8n: {message.metadata.n8nIntegration.success 
+                              ? `Message sent successfully${message.metadata.n8nIntegration.retryAttempts && message.metadata.n8nIntegration.retryAttempts > 1 ? ` (${message.metadata.n8nIntegration.retryAttempts} attempts)` : ''}`
+                              : `Failed - ${message.metadata.n8nIntegration.error}`
+                            }
                           </div>
                         )}
                         {message.metadata.fallbackUsed && (
@@ -483,6 +516,7 @@ I'm your advanced AI assistant powered by Retrieval-Augmented Generation (RAG) a
             Session: {sessionId.split('-').pop()} • 
             RAG Status: {getRAGStatusText()} • 
             n8n Status: {getN8nStatusText()}
+            {webhookRetryCount > 1 && ` • Last request: ${webhookRetryCount} attempts`}
           </div>
         </div>
       </Card>
