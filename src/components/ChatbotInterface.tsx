@@ -3,9 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Send, BookOpen, TrendingUp } from 'lucide-react';
+import { Bot, Send, BookOpen, TrendingUp, Activity, Database, Webhook } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { ragService } from '@/services/ragService';
+import { n8nWebhookService } from '@/services/n8nWebhookService';
 
 const ChatbotInterface = () => {
   const [query, setQuery] = useState('');
@@ -13,6 +15,8 @@ const ChatbotInterface = () => {
   const [loading, setLoading] = useState(false);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [academyContent, setAcademyContent] = useState<any[]>([]);
+  const [ragStatus, setRAGStatus] = useState<'inactive' | 'initializing' | 'active' | 'error'>('inactive');
+  const [n8nStatus, setN8nStatus] = useState<'inactive' | 'healthy' | 'unhealthy'>('inactive');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -32,7 +36,48 @@ const ChatbotInterface = () => {
   useEffect(() => {
     loadChatHistory();
     loadData();
+    initializeServices();
   }, []);
+
+  const initializeServices = async () => {
+    try {
+      setRAGStatus('initializing');
+      await ragService.initialize();
+      
+      // Check RAG health status
+      const ragHealth = await ragService.healthCheck();
+      setRAGStatus(ragHealth.status === 'healthy' ? 'active' : 'error');
+      
+      // Check n8n webhook health
+      const n8nHealth = await n8nWebhookService.healthCheck();
+      setN8nStatus(n8nHealth.status);
+      
+      if (ragHealth.status !== 'healthy') {
+        toast({
+          title: "RAG System Status",
+          description: "Running in limited mode. Some features may use fallback logic.",
+          variant: "default",
+        });
+      }
+
+      if (n8nHealth.status === 'unhealthy') {
+        toast({
+          title: "n8n Webhook Status",
+          description: "n8n webhook is not responding. Integration features may be limited.",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error('Service initialization failed:', error);
+      setRAGStatus('error');
+      setN8nStatus('unhealthy');
+      toast({
+        title: "Service Initialization Error",
+        description: "Failed to initialize services. Using fallback mode.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const loadChatHistory = () => {
     try {
@@ -379,6 +424,54 @@ const ChatbotInterface = () => {
     localStorage.removeItem('ai-assistant-chat-history');
   };
 
+  const getRAGStatusIcon = () => {
+    switch (ragStatus) {
+      case 'active':
+        return <Activity className="w-4 h-4 text-green-400" />;
+      case 'initializing':
+        return <Database className="w-4 h-4 text-yellow-400 animate-pulse" />;
+      case 'error':
+        return <Database className="w-4 h-4 text-red-400" />;
+      default:
+        return <Database className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getRAGStatusText = () => {
+    switch (ragStatus) {
+      case 'active':
+        return 'RAG Active';
+      case 'initializing':
+        return 'Initializing...';
+      case 'error':
+        return 'RAG Fallback';
+      default:
+        return 'RAG Inactive';
+    }
+  };
+
+  const getN8nStatusIcon = () => {
+    switch (n8nStatus) {
+      case 'healthy':
+        return <Webhook className="w-4 h-4 text-green-400" />;
+      case 'unhealthy':
+        return <Webhook className="w-4 h-4 text-red-400" />;
+      default:
+        return <Webhook className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getN8nStatusText = () => {
+    switch (n8nStatus) {
+      case 'healthy':
+        return 'n8n Connected';
+      case 'unhealthy':
+        return 'n8n Offline';
+      default:
+        return 'n8n Inactive';
+    }
+  };
+
   return (
     <div className="max-w-full mx-auto">
       <Card className="bg-white/10 backdrop-blur-sm border-white/20 text-white h-[calc(100vh-100px)] flex flex-col">
@@ -387,6 +480,22 @@ const ChatbotInterface = () => {
           <CardTitle className="flex items-center">
             <Bot className="w-5 h-5 mr-2" />
             AI Assistant - Campaign & Academy Knowledge
+            <div className="flex space-x-2 ml-3">
+              <Badge 
+                variant="outline" 
+                className="border-white/30 text-white/70 bg-gray-700/50"
+              >
+                {getRAGStatusIcon()}
+                <span className="ml-1">{getRAGStatusText()}</span>
+              </Badge>
+              <Badge 
+                variant="outline" 
+                className="border-white/30 text-white/70 bg-gray-700/50"
+              >
+                {getN8nStatusIcon()}
+                <span className="ml-1">{getN8nStatusText()}</span>
+              </Badge>
+            </div>
           </CardTitle>
             <Button
               onClick={clearChatHistory}

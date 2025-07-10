@@ -5,6 +5,7 @@ import { MessageCircle, Bot, Users, BookOpen } from "lucide-react";
 import AuthModal from "@/components/AuthModal";
 import ChatInterface from "@/components/ChatInterface";
 import ChatbotInterface from "@/components/ChatbotInterface";
+import RAGChatInterface from "@/components/ragChatInterface";
 import UserProfile from "@/components/UserProfile";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/toaster";
@@ -131,7 +132,7 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <Tabs defaultValue="chat" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 bg-white/10 backdrop-blur-sm border-white/20">
+          <TabsList className="grid w-full grid-cols-3 bg-white/10 backdrop-blur-sm border-white/20">
             <TabsTrigger value="chat" className="flex items-center space-x-2 text-white data-[state=active]:bg-white/20">
               <Users className="w-4 h-4" />
               <span>Community Chat</span>
@@ -139,6 +140,10 @@ const Index = () => {
             <TabsTrigger value="ai" className="flex items-center space-x-2 text-white data-[state=active]:bg-white/20">
               <Bot className="w-4 h-4" />
               <span>AI Assistant</span>
+            </TabsTrigger>
+            <TabsTrigger value="rag" className="flex items-center space-x-2 text-white data-[state=active]:bg-white/20">
+              <BookOpen className="w-4 h-4" />
+              <span>RAG + n8n</span>
             </TabsTrigger>
           </TabsList>
           
@@ -148,6 +153,10 @@ const Index = () => {
           
           <TabsContent value="ai" className="mt-6">
             <ChatbotInterface />
+          </TabsContent>
+          
+          <TabsContent value="rag" className="mt-6">
+            <RAGChatInterface />
           </TabsContent>
         </Tabs>
       </main>
